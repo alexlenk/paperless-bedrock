@@ -1,4 +1,4 @@
-# paperless-bedrock — Design (v0.2, draft)
+# paperless-bedrock — Design (v0.3)
 
 Status: draft · Date: 2026-10-03
 
@@ -48,8 +48,11 @@ ingestion and OCR (paperless); backup.
 ## 3. Trigger, access and idempotency
 
 - **Trigger:** paperless workflow, trigger *Document Added*, action *Webhook* →
-  `POST http://paperless-bedrock:8080/analyze` with `{"document_id": {{doc_id}}}`
-  (container on the same compose network; never published to the internet).
+  `POST http://paperless-bedrock:8080/analyze`, JSON parameter `document_id` = `{{ doc_id }}`,
+  header `Authorization: Bearer <WEBHOOK_TOKEN>` (container on the same compose network; never
+  published to the internet). The webhook only enqueues the document (HTTP 202); a persistent
+  SQLite job queue and a single worker do the analysis, so restarts lose nothing and letters are
+  processed one at a time.
 - **Service user** in paperless (e.g. `svc-bedrock`): Documents View + Change; Notes Add + View;
   Custom fields View; Correspondents / Document types / Tags View. **No delete. No admin.**
   Uses its own API token.
@@ -57,8 +60,9 @@ ingestion and OCR (paperless); backup.
   model / inference profile. No other AWS permissions. A dedicated AWS account is recommended.
 - **Idempotency:** a document is skipped if an analysis with the same
   `{schema_version, source_checksum}` already exists. A schema bump re-analyses on request only.
-- **Retries:** transient Bedrock/paperless errors are retried with back-off (max 3).
-  Permanent failure → tag `analysis-failed` + alert (see §10).
+- **Retries:** Bedrock errors and paperless 5xx/network errors are retried with exponential
+  back-off (30 s, 60 s, ...; `MAX_ATTEMPTS`, default 3). paperless 4xx (permissions, not found) is
+  permanent at once. Permanent failure → tag `analysis-failed` + error log (see §10).
 
 ## 4. Input preparation
 
@@ -87,10 +91,17 @@ ingestion and OCR (paperless); backup.
   Rationale: public document benchmarks show Sonnet and Opus of the same generation at parity
   (IDP Leaderboard: Sonnet 4.6 81.2 vs Opus 4.6 81.1), and image input clearly helps on scans
   (one 2025 invoice benchmark: 92.7 % with images vs 64.0 % with parsed text).
-- **Strategy (configurable):** `single` (default). `dual_judge` (two analysts with different
+- **Strategy:** `single` (implemented). `dual_judge` (two analysts with different
   inputs/models, deterministic field comparison, judge only on disagreeing fields, per-field
   provenance) is an option, only enabled if the answer key shows a measurable gain.
 - **Cost estimate (50 pages/month, Sonnet 5.5 on Bedrock EU, text + images):** ≈ $1–1.50/month.
+- **Output language:** free-text fields (`summary`, `description`, `consequence_if_missed`,
+  `uncertainties`) are written in the **letter's language**; quotes are always verbatim.
+- **Model parameters:** no `temperature` (Claude 5.5 models reject non-default sampling
+  parameters). Strands lets the model call its structured-output tool with `tool_choice=auto` and
+  only forces the tool if the model answers in plain text; Claude 5.5 rejects forced tool choice,
+  so the prompt instructs the model to always use the tool, and such a failure counts as a retryable
+  error. Bedrock strict tool use is not enabled yet (to test against the schema's patterns).
 - **Structured output:** response constrained to the schema in §6. Keep the schema lean:
   benchmark evidence (ExtractBench) shows schema breadth, not model tier, drives extraction failures.
 - **Prompt principles:**
@@ -242,13 +253,17 @@ uncertain and can decide conservatively. Nothing is dropped silently.
      `paymentMethod`, `actionRequired`, `nextDeadline`, `escalationLevel`, `schemaVersion`)
      **plus** the complete analysis JSON as one property (`letter:analysisJSON`).
      The namespace URI is an identifier and must never change for schema 1.x.
-2. **paperless note:** the full JSON (for agents / MCP servers).
+2. **paperless note:** the full JSON (for agents / MCP servers). Written **last**: the note is
+   the completion marker used for idempotency, so an interrupted run is simply repeated.
 3. **paperless fields:** title; custom fields (names configurable, defaults: `Payment needed`,
    `Amount`, `Due date`, `Payee IBAN`, `Payment reference`, `Reply deadline`, `Country`);
    optionally remove an inbox tag. Correspondent, document type and tags stay with paperless'
-   own classifier.
-4. **Notification (optional):** webhook or email per analysed document with the JSON and the
-   stable `paperless_document_id`.
+   own classifier. A PATCH of `custom_fields` replaces the whole list, so fields not managed by
+   paperless-bedrock are merged back in; values are converted per paperless data type
+   (monetary `EUR447.19`, date, boolean, text ≤ 128 chars). Fields missing in paperless are skipped.
+   Write order: title + fields (one PATCH) → PDF version → note.
+4. **Notification (optional, not implemented yet):** webhook or email per analysed document
+   with the JSON and the stable `paperless_document_id`.
 
 ## 9. Interface to downstream consumers
 

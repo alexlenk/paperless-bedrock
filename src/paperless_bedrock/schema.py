@@ -84,7 +84,7 @@ class Document(_Model):
     date: dt.date | None = Field(description="Date printed on the letter.")
     type: DocumentType
     subject: str
-    summary: str = Field(description="2-3 sentence neutral summary.")
+    summary: str = Field(description="2-3 sentence neutral summary, in the letter's language.")
     enclosures: list[str] = []
 
 
@@ -248,6 +248,10 @@ class InputInfo(_Model):
     images_sent: bool
     truncated: bool
     noise_pages_dropped: list[int] = []
+    page_text_quality: dict[int, float] = Field(
+        default={},
+        description="Share of real words per page (0..1); low values hint at OCR problems.",
+    )
 
 
 class ValidationIssue(_Model):

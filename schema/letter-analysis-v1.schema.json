@@ -119,7 +119,7 @@
           "type": "string"
         },
         "summary": {
-          "description": "2-3 sentence neutral summary.",
+          "description": "2-3 sentence neutral summary, in the letter's language.",
           "title": "Summary",
           "type": "string"
         },
@@ -222,6 +222,15 @@
           },
           "title": "Noise Pages Dropped",
           "type": "array"
+        },
+        "page_text_quality": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "default": {},
+          "description": "Share of real words per page (0..1); low values hint at OCR problems.",
+          "title": "Page Text Quality",
+          "type": "object"
         }
       },
       "required": [

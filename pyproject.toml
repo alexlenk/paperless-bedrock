@@ -7,7 +7,18 @@ license = "Apache-2.0"
 license-files = ["LICENSE"]
 authors = [{ name = "Alex Lenk", email = "alexander.lenk@lenkmail.de" }]
 requires-python = ">=3.12"
-dependencies = ["pydantic>=2.13,<3"]
+dependencies = [
+    "pydantic>=2.13,<3",
+    "pydantic-settings>=2.15,<3",
+    "strands-agents>=1.57,<2",
+    "httpx>=0.28,<1",
+    "pikepdf>=10.16,<11",
+    "pypdfium2>=5.13,<6",
+    "pillow>=12.3,<13",
+    "rapidfuzz>=3.14,<4",
+    "starlette>=1.7,<2",
+    "uvicorn>=0.54,<1",
+]
 classifiers = [
     "Development Status :: 2 - Pre-Alpha",
     "Programming Language :: Python :: 3",
@@ -21,7 +32,7 @@ Repository = "https://github.com/alexlenk/paperless-bedrock"
 paperless-bedrock = "paperless_bedrock.cli:main"
 
 [dependency-groups]
-dev = ["pytest>=9.1", "ruff>=0.16", "mypy>=2.4"]
+dev = ["pytest>=9.1", "ruff>=0.16", "mypy>=2.4", "reportlab>=5.0"]
 
 [build-system]
 requires = ["hatchling"]
@@ -36,10 +47,16 @@ target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF"]
+# Typographic characters that occur in real letters (German quotes, dashes).
+allowed-confusables = ["–", "‚", "‘", "’"]
 
 [tool.mypy]
 strict = true
 plugins = ["pydantic.mypy"]
+
+[[tool.mypy.overrides]]
+module = ["pypdfium2.*", "reportlab.*"]
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -31,3 +31,4 @@ jobs:
       - uses: actions/checkout@v7
       - run: docker build -t paperless-bedrock .
       - run: docker run --rm paperless-bedrock --version
+      - run: docker run --rm paperless-bedrock schema > /dev/null

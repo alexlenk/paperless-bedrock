@@ -1,0 +1,21 @@
+# Add this service to the compose project that runs paperless-ngx.
+services:
+  paperless-bedrock:
+    image: ghcr.io/alexlenk/paperless-bedrock:latest  # not published yet: build from this repository
+    restart: unless-stopped
+    depends_on:
+      - webserver
+    environment:
+      PAPERLESS_URL: http://webserver:8000
+      PAPERLESS_TOKEN: ${PAPERLESS_BEDROCK_TOKEN}       # API token of the service user
+      PAPERLESS_PUBLIC_URL: https://paperless.example.ts.net:8443
+      WEBHOOK_TOKEN: ${PAPERLESS_BEDROCK_WEBHOOK_TOKEN}  # same value in the paperless workflow header
+      AWS_ACCESS_KEY_ID: ${PAPERLESS_BEDROCK_AWS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${PAPERLESS_BEDROCK_AWS_SECRET}
+      AWS_REGION: eu-central-1
+      BEDROCK_MODEL_ID: eu.anthropic.claude-sonnet-5-5
+      RECIPIENT_CONTEXT_FILE: /config/recipients.toml
+    volumes:
+      - ./paperless-bedrock/data:/data
+      - ./paperless-bedrock/recipients.toml:/config/recipients.toml:ro
+    # No ports: paperless reaches the container on the internal compose network.
