@@ -1,0 +1,45 @@
+[project]
+name = "paperless-bedrock"
+dynamic = ["version"]
+description = "Neutral, evidence-backed letter analysis for paperless-ngx using Amazon Bedrock"
+readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+authors = [{ name = "Alex Lenk", email = "alexander.lenk@lenkmail.de" }]
+requires-python = ">=3.12"
+dependencies = ["pydantic>=2.13,<3"]
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Programming Language :: Python :: 3",
+    "Topic :: Office/Business",
+]
+
+[project.urls]
+Repository = "https://github.com/alexlenk/paperless-bedrock"
+
+[project.scripts]
+paperless-bedrock = "paperless_bedrock.cli:main"
+
+[dependency-groups]
+dev = ["pytest>=9.1", "ruff>=0.16", "mypy>=2.4"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+path = "src/paperless_bedrock/__init__.py"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF"]
+
+[tool.mypy]
+strict = true
+plugins = ["pydantic.mypy"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
