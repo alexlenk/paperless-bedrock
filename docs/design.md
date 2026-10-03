@@ -210,8 +210,23 @@ uncertain and can decide conservatively. Nothing is dropped silently.
 ## 8. Outputs and storage
 
 1. **PDF version with XMP (authoritative, tool-independent).**
-   Upload via the paperless document-versions API with label `analysis-v1`.
-   The original stays untouched as the root version.
+   Upload via `POST /api/documents/{id}/update_version/` (multipart `document`, `version_label`
+   = `analysis-v1`). The original stays untouched as the root version. Findings for
+   paperless-ngx 3.2.1 (source code + OCRmyPDF 17.12 experiment, see §12):
+   - A new version runs through the full consume pipeline (parse, OCR decision, archive decision),
+     but **workflows are skipped for version documents** → no webhook loop. Adding a version fires
+     *Document Updated* workflows on the root document.
+   - The uploaded file is stored **byte-for-byte as the version's original** → our XMP is always
+     preserved there. Download and `content` of the root default to the newest version.
+   - OCRmyPDF's PDF/A output keeps standard XMP (`dc:title`, `dc:creator`) but **drops custom
+     namespaces and the PDF/A extension schema**. So whenever paperless builds an archive file for
+     the version, the archive loses `letter:*`.
+   - Therefore the analyst uploads a PDF **that already has a text layer** (the root's archive file
+     if one exists, otherwise its original). With `OCR_MODE=auto` + `ARCHIVE_FILE_GENERATION=auto`
+     such a PDF counts as born-digital (text > 50 chars or tagged) → no OCRmyPDF run, no archive →
+     the stored file is exactly ours. With other settings the archive copy loses `letter:*`; the
+     version's original keeps it. Reading always uses the version's original
+     (`/download/?original=true`).
    - Standard fields (read by Finder/Spotlight, Explorer, Acrobat, exiftool, other DMS):
 
      | Field | Content |
@@ -271,8 +286,12 @@ uncertain and can decide conservatively. Nothing is dropped silently.
 
 1. ~~Claude model availability on Bedrock in an EU region~~ — verified: Opus 5.5 and Sonnet 5.5
    via EU geo inference profiles from eu-central-1 (no single-region deployment).
-2. paperless document versions: exact endpoint and behaviour in the supported paperless version;
-   does a new version get re-OCRed; does the exporter include versions?
-3. Does paperless' PDF/A archive generation (OCRmyPDF) preserve custom XMP on the new version?
-   If not: write XMP into the archive file as well, or accept XMP on the original-version file only.
-4. Minimum supported paperless-ngx version.
+2. ~~paperless document versions~~ — verified in paperless-ngx 3.2.1 source: endpoint
+   `update_version`, full consume pipeline, workflows skipped for versions, exporter exports all
+   document rows including versions (`Document.global_objects`). See §8.
+3. ~~Does OCRmyPDF preserve custom XMP~~ — tested with OCRmyPDF 17.12.1 (the range paperless 3.2.1
+   pins): `skip_text`, normal OCR and `force_ocr` with PDF/A output keep `dc:title` but drop
+   `letter:*` and the extension schema; `redo_ocr` with plain PDF output keeps everything. See §8.
+4. Minimum supported paperless-ngx version: 3.x (document versions API). Exact minimum to confirm.
+5. Ghostscript-only PDF/A conversion path (`OCR_MODE=off` with archive) not tested yet; assumed to
+   drop custom XMP as well.
