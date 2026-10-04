@@ -17,6 +17,10 @@ the result with deterministic rules, and stores it:
   plus the full analysis), so the analysis survives a change of document management system,
 - as a **paperless note** (full JSON), **custom fields** (amount, due date, IBAN, ...) and a
   readable **title**,
+- with a consistent **correspondent** and **document type**: chosen from what already exists,
+  anchored on the sender's own identifiers (creditor ID, VAT ID, register number), and duplicates
+  are **merged automatically** every night (logged, reversible),
+- with **person tags** for the household members a letter is addressed to,
 - optionally with a **tax classification**: which of your tax returns (e.g. German, US, a US LLC)
   the document matters for, the tax year and the category — as tags and custom fields.
 
@@ -44,9 +48,11 @@ Claude on Amazon Bedrock.
    model ARNs in the Bedrock console for your region. A dedicated AWS account keeps billing and
    access separate.
 2. **paperless service user** (e.g. `svc-bedrock`, not an admin): permissions
-   Document view + change, Note view + add, Custom field view, Tag view, Correspondent / Document
-   type view. Create an API token for it.
-3. **paperless objects:** create the tag `analysis-failed`, and the custom fields you want filled
+   Document view + change, Note view + add, Custom field view, Tag view,
+   Correspondent view + add + change + delete, Document type view + add + change + delete
+   (needed to create and merge them). **No document delete.** Create an API token for it.
+3. **paperless objects:** create the tag `analysis-failed` (plus the tax and person tags from your
+   context file, if any), and the custom fields you want filled
    (any subset; missing ones are skipped):
 
    | Default name | Type |
@@ -71,7 +77,8 @@ Claude on Amazon Bedrock.
    default `true`).
 
 Existing documents can be analysed with `paperless-bedrock analyze <document id>` inside the
-container (add `--force` to re-analyse).
+container (add `--force` to re-analyse), or queued in bulk with `paperless-bedrock enqueue`
+(see [Importing an existing archive](#importing-an-existing-archive)).
 
 ## Configuration
 
@@ -89,7 +96,11 @@ All settings are environment variables.
 | `MAX_PAGES` / `MAX_IMAGE_PAGES` | `20` / `20` | Pages sent as text / as images; more pages set `input.truncated` |
 | `IMAGE_DPI` | `130` | Resolution of the page images |
 | `NOISE_PROFILES` | `["deutsche_post_postscan"]` | JSON list of noise profiles (see `prepare.py`) |
-| `CONTEXT_FILE` | none | TOML with names, own IBANs and tax scopes ([example](examples/context.toml)) |
+| `CONTEXT_FILE` | none | TOML with persons, own IBANs/identifiers and tax scopes ([example](examples/context.toml)) |
+| `ASSIGN_CORRESPONDENT` / `ASSIGN_DOCUMENT_TYPE` | `true` / `true` | Let the analyst set (and create) them |
+| `JUDGE_MODEL_ID` | `BEDROCK_MODEL_ID` | Model for "same sender?" checks (short calls, no letter text) |
+| `CONSOLIDATE_HOUR` | `3` | Local hour (container `TZ`) of the nightly consolidation; `off` disables it |
+| `MAX_JUDGE_CALLS_PER_CONSOLIDATION` | `50` | Cost cap per nightly run |
 | `FAILED_TAG` | `analysis-failed` | Tag for failed analyses |
 | `REMOVE_INBOX_TAGS` | `false` | Remove inbox tags after analysis |
 | `SET_TITLE` | `true` | Set the title to "Sender – Subject" |
@@ -97,7 +108,54 @@ All settings are environment variables.
 | `VERSION_LABEL` | `analysis-v1` | Label of that version |
 | `CUSTOM_FIELDS__<KEY>` | see table above | Rename a custom field, e.g. `CUSTOM_FIELDS__AMOUNT=Betrag` |
 | `MAX_ATTEMPTS` | `3` | Attempts per document before it is tagged as failed |
-| `DATA_DIR` | `/data` | Job queue (SQLite) |
+| `DATA_DIR` | `/data` | Job queue and knowledge index (SQLite) |
+
+## Correspondents, document types and clean-up
+
+The analyst sees the existing correspondents and document types and picks one; it creates a new
+one only if nothing fits. Code then checks the choice before anything is created:
+
+1. **Sender identifiers** decide: the creditor ID (SEPA), VAT ID or commercial register number of
+   the sender maps to exactly one correspondent → that one is used, whatever the spelling.
+   Tax, customer and contract numbers or IBANs never decide the sender (they are often yours, or a
+   payment provider's); they are used as hints: the analyst sees the last related letters.
+2. **Exact name or known alias** (old spellings of merged correspondents).
+3. **Similar name** → a short model call compares the two (names, addresses, identifiers, recent
+   subjects, no letter text) and maps only when confident.
+4. Otherwise a new correspondent / document type is created.
+
+Every night (`CONSOLIDATE_HOUR`) the same rules run over all correspondents and document types
+and **merge duplicates automatically**: documents move, the duplicate is deleted, its name becomes
+an alias. Objects created by a person in paperless are never merged away. Nothing needs you; if a
+merge was wrong:
+
+```sh
+paperless-bedrock merges            # list recent merges
+paperless-bedrock undo 17           # restore, and never merge that pair again
+paperless-bedrock consolidate --dry-run
+```
+
+The knowledge index (`DATA_DIR/knowledge.sqlite3`) is only a lookup table derived from paperless;
+`paperless-bedrock reindex` rebuilds it from the analysis notes, and paperless' current
+assignments always win.
+
+## Importing an existing archive
+
+Example: 1,900 files exported from another DMS.
+
+1. In the paperless workflow trigger, add the filter *does not have tags* = `import` so the import
+   does not fire 1,900 webhooks.
+2. Copy the files into `consume/import/` (with `PAPERLESS_CONSUMER_SUBDIRS_AS_TAGS=true` every
+   document gets the tag `import`). paperless skips byte-identical duplicates.
+3. When paperless is done, queue them in batches, newest first. Batch jobs run only when no new
+   letter is waiting; `--light` skips the title change and the PDF version:
+
+   ```sh
+   docker exec paperless-bedrock paperless-bedrock enqueue --tag import --light \
+       --created-after 2023-01-01 --limit 300
+   ```
+
+Cost: roughly 2–3 US cents per page with Claude Sonnet on Bedrock.
 
 ## Tax classification
 

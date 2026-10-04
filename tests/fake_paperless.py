@@ -35,6 +35,14 @@ class FakePaperless:
         }
         self.tags = {"analysis-failed": 7}
         self.fail_notes_with: int | None = None
+        # correspondents / document_types: id -> {"name", "owner"}; documents: id -> fields
+        self.objects: dict[str, dict[int, dict[str, Any]]] = {
+            "correspondents": {},
+            "document_types": {},
+        }
+        self.documents: dict[int, dict[str, Any]] = {1: self.doc}
+        self.bulk_edits: list[dict[str, Any]] = []
+        self.next_id = 100
 
     def transport(self) -> httpx.MockTransport:
         return httpx.MockTransport(self.handle)
@@ -48,6 +56,9 @@ class FakePaperless:
         if path == "/api/documents/1/" and method == "PATCH":
             body = json.loads(request.content)
             self.patches.append(body)
+            for key in ("correspondent", "document_type", "title", "tags"):
+                if key in body:
+                    self.doc[key] = body[key]
             return httpx.Response(200, json=self.doc)
         if path == "/api/documents/1/download/":
             self.downloads.append(dict(request.url.params))
@@ -73,6 +84,56 @@ class FakePaperless:
             found = self.custom_fields.get(request.url.params["name__iexact"])
             results = [{"id": found[0], "data_type": found[1]}] if found else []
             return httpx.Response(200, json={"results": results})
+        m = re.fullmatch(r"/api/(correspondents|document_types)/(?:(\d+)/)?", path)
+        if m:
+            endpoint, object_id = m.group(1), m.group(2)
+            store = self.objects[endpoint]
+            if method == "GET":
+                field = "correspondent" if endpoint == "correspondents" else "document_type"
+                results = [
+                    {
+                        "id": i,
+                        "name": o["name"],
+                        "owner": o.get("owner"),
+                        "document_count": sum(
+                            1 for d in self.documents.values() if d.get(field) == i
+                        ),
+                    }
+                    for i, o in sorted(store.items(), key=lambda x: x[1]["name"])
+                ]
+                return httpx.Response(200, json={"results": results, "next": None})
+            if method == "POST":
+                self.next_id += 1
+                store[self.next_id] = {"name": json.loads(request.content)["name"], "owner": 3}
+                return httpx.Response(201, json={"id": self.next_id})
+            if method == "DELETE":
+                del store[int(object_id)]
+                return httpx.Response(204)
+        if path == "/api/documents/" and method == "GET":
+            params = request.url.params
+            docs = list(self.documents.values())
+            for key, field in (
+                ("correspondent__id", "correspondent"),
+                ("document_type__id", "document_type"),
+            ):
+                if key in params:
+                    docs = [d for d in docs if d.get(field) == int(params[key])]
+            if "tags__id__all" in params:
+                docs = [d for d in docs if int(params["tags__id__all"]) in d.get("tags", [])]
+            fields = params.get("fields")
+            rows = (
+                [{f: d.get(f) for f in fields.split(",")} for d in docs]
+                if fields
+                else [{"id": d["id"]} for d in docs]
+            )
+            return httpx.Response(200, json={"results": rows, "next": None})
+        if path == "/api/documents/bulk_edit/":
+            body = json.loads(request.content)
+            self.bulk_edits.append(body)
+            field = "correspondent" if body["method"] == "set_correspondent" else "document_type"
+            for doc_id in body["documents"]:
+                self.documents[doc_id][field] = body["parameters"][field]
+            return httpx.Response(200, json={"result": "OK"})
         if path == "/api/tags/":
             tag = self.tags.get(request.url.params["name__iexact"])
             return httpx.Response(200, json={"results": [{"id": tag}] if tag else []})

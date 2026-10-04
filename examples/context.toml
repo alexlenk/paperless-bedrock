@@ -1,8 +1,18 @@
 # Optional context for the analyst. Facts only: no rules about importance or routing.
 
-# Recognise who a letter is for and which IBANs are your own.
-names = ["Erika Mustermann", "Max Mustermann"]
+# Your own accounts and identifiers: never treated as a sender's.
 own_ibans = ["DE02 1203 0000 0000 2020 51"]
+own_identifiers = ["12-3456789"]  # e.g. the EIN or VAT ID of an own company
+
+# Household members: letters addressed to them get their tag.
+[[persons]]
+name = "Erika Mustermann"
+tag = "Erika"
+aliases = ["Dr. Erika Mustermann", "E. Mustermann"]
+
+[[persons]]
+name = "Max Mustermann"
+tag = "Max"
 
 # Tax classification. Without scopes, no tax classification is done.
 [tax]

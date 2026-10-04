@@ -37,27 +37,42 @@ class Job:
     id: int
     document_id: int
     attempts: int
+    light: bool = False
+
+
+PRIORITY_NEW = 0  # webhook: new letters first
+PRIORITY_BATCH = 1  # bulk imports run when nothing new is waiting
 
 
 class JobQueue:
-    def __init__(self, path: Path) -> None:
+    def __init__(self, path: Path, *, recover: bool = False) -> None:
+        """`recover`: requeue jobs left 'running' by a stopped server (only the server sets it)."""
         path.parent.mkdir(parents=True, exist_ok=True)
         self._db = sqlite3.connect(path, check_same_thread=False, isolation_level=None)
         self._lock = threading.Lock()
         with self._lock:
+            self._db.execute("PRAGMA journal_mode = WAL")
+            self._db.execute("PRAGMA busy_timeout = 10000")
             self._db.executescript(_SCHEMA)
-            # Jobs that were running when the process stopped are picked up again.
-            self._db.execute("UPDATE jobs SET status = 'queued' WHERE status = 'running'")
+            columns = {row[1] for row in self._db.execute("PRAGMA table_info(jobs)")}
+            if "light" not in columns:
+                self._db.execute("ALTER TABLE jobs ADD COLUMN light INTEGER NOT NULL DEFAULT 0")
+            if "priority" not in columns:
+                self._db.execute("ALTER TABLE jobs ADD COLUMN priority INTEGER NOT NULL DEFAULT 0")
+            if recover:
+                self._db.execute("UPDATE jobs SET status = 'queued' WHERE status = 'running'")
 
-    def enqueue(self, document_id: int) -> bool:
+    def enqueue(
+        self, document_id: int, *, light: bool = False, priority: int = PRIORITY_NEW
+    ) -> bool:
         """Queue a document; returns False if an open job for it already exists."""
         now = time.time()
         with self._lock:
             cur = self._db.execute(
                 "INSERT OR IGNORE INTO jobs"
-                " (document_id, status, not_before, created_at, updated_at)"
-                " VALUES (?, 'queued', ?, ?, ?)",
-                (document_id, now, now, now),
+                " (document_id, status, not_before, created_at, updated_at, light, priority)"
+                " VALUES (?, 'queued', ?, ?, ?, ?, ?)",
+                (document_id, now, now, now, int(light), priority),
             )
             return cur.rowcount == 1
 
@@ -65,9 +80,9 @@ class JobQueue:
         now = time.time()
         with self._lock:
             row = self._db.execute(
-                "SELECT id, document_id, attempts FROM jobs"
+                "SELECT id, document_id, attempts, light FROM jobs"
                 " WHERE status = 'queued' AND not_before <= ?"
-                " ORDER BY not_before, id LIMIT 1",
+                " ORDER BY priority, not_before, id LIMIT 1",
                 (now,),
             ).fetchone()
             if row is None:
@@ -77,7 +92,7 @@ class JobQueue:
                 " WHERE id = ?",
                 (now, row[0]),
             )
-            return Job(id=row[0], document_id=row[1], attempts=row[2] + 1)
+            return Job(id=row[0], document_id=row[1], attempts=row[2] + 1, light=bool(row[3]))
 
     def finish(self, job: Job) -> None:
         self._set(job, "done", None, time.time())
@@ -109,13 +124,15 @@ class Worker:
     def __init__(
         self,
         queue: JobQueue,
-        process: Callable[[int], object],
+        process: Callable[[Job], object],
         on_failure: Callable[[int, str], None],
         max_attempts: int,
         poll_seconds: float = 2.0,
+        idle: Callable[[], object] | None = None,
     ) -> None:
         self.queue = queue
         self.process = process
+        self.idle = idle
         self.on_failure = on_failure
         self.max_attempts = max_attempts
         self.poll_seconds = poll_seconds
@@ -130,11 +147,17 @@ class Worker:
         self._thread.join(timeout=30)
 
     def run_once(self) -> bool:
+        if self.idle is not None:
+            # e.g. the nightly consolidation: checked between jobs, never runs in parallel to one
+            try:
+                self.idle()
+            except Exception:
+                log.exception("maintenance task failed")
         job = self.queue.claim()
         if job is None:
             return False
         try:
-            self.process(job.document_id)
+            self.process(job)
         except PaperlessError as e:
             self._give_up(job, str(e))
         except Exception as e:

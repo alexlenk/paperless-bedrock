@@ -215,6 +215,34 @@ Output in paperless only: one tag per relevant scope, `tax-unclear`, custom fiel
 (integer) and `Tax categories` (text). Tax tags are replaced on re-analysis. Not written to XMP:
 tax relevance depends on household context and is not a property of the letter.
 
+### 6b. Correspondents, document types, persons (archive memory without model memory)
+
+The model has no memory and no tools. Consistency comes from the archive itself, prepared by code:
+
+- **Before the call:** reference numbers are extracted from the text with fixed patterns (IBAN,
+  creditor ID, VAT ID, register number, tax/customer/contract/invoice numbers, case references)
+  and looked up in the knowledge index; the last related analyses (compact summaries) are added to
+  the prompt as context. The existing correspondents (with aliases) and document types are listed
+  in the system prompt (stable across letters → prompt caching).
+- **Model output:** `classification.correspondent` / `classification.document_type`: an existing
+  name or a proposal.
+- **Resolution (code):** (1) sender identity references (creditor ID, VAT ID, register number from
+  `sender.identifiers`) mapping to exactly one correspondent; (2) exact name or alias; (3) similar
+  names (rapidfuzz) → a judge call without letter text, used only when confident; (4) create.
+  Tax, customer, contract numbers and IBANs are **never** identity: they are often the recipient's
+  or a payment provider's (a Steuerberater letter quotes the client's tax number).
+- **Persons:** `recipients.known_person_match` against the configured persons (with aliases) →
+  person tags, replaced on re-analysis.
+- **Knowledge index** (`knowledge.sqlite3`): documents, references, aliases, objects created by
+  this tool, merge log, blocked pairs. Derived from paperless and rebuildable (`reindex`);
+  paperless assignments win (synced before every consolidation).
+- **Nightly consolidation** (between jobs, never in parallel to one): identity duplicates are
+  merged; similar names are judged (cost cap per run). Merge = bulk-move documents, log, alias,
+  delete. Objects created by a person (owner set, not created by this tool) are never merged away.
+  `undo` recreates the object, moves its documents back and blocks the pair forever.
+- **Bulk import:** `enqueue --tag ... --light`: batch jobs have lower priority than webhook jobs;
+  light = no title change, no PDF version.
+
 ## 7. Deterministic checks (after the model)
 
 | Check | Rule | On failure |
