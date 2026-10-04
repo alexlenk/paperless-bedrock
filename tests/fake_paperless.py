@@ -18,6 +18,7 @@ class FakePaperless:
             "archived_file_name": "1.pdf" if has_archive else None,
             "page_count": 1,
             "added": "2026-09-28T15:35:00+00:00",
+            "created": "2026-09-28",
             "tags": [5],
             "custom_fields": [{"field": 99, "value": "keep me"}],
             "root_document": None,
@@ -56,7 +57,7 @@ class FakePaperless:
         if path == "/api/documents/1/" and method == "PATCH":
             body = json.loads(request.content)
             self.patches.append(body)
-            for key in ("correspondent", "document_type", "title", "tags"):
+            for key in ("correspondent", "document_type", "title", "tags", "created"):
                 if key in body:
                     self.doc[key] = body[key]
             return httpx.Response(200, json=self.doc)

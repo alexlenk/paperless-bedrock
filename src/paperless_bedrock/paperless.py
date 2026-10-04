@@ -28,6 +28,7 @@ class DocumentInfo:
     custom_fields: list[dict[str, Any]]
     correspondent: int | None = None
     document_type: int | None = None
+    created: dt.date | None = None
 
 
 @dataclass(frozen=True)
@@ -88,6 +89,7 @@ class PaperlessClient:
             custom_fields=list(data.get("custom_fields") or []),
             correspondent=data.get("correspondent"),
             document_type=data.get("document_type"),
+            created=dt.date.fromisoformat(data["created"][:10]) if data.get("created") else None,
         )
 
     def download(self, document_id: int, *, original: bool) -> bytes:

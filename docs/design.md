@@ -296,7 +296,9 @@ uncertain and can decide conservatively. Nothing is dropped silently.
      The namespace URI is an identifier and must never change for schema 1.x.
 2. **paperless note:** the full JSON (for agents / MCP servers). Written **last**: the note is
    the completion marker used for idempotency, so an interrupted run is simply repeated.
-3. **paperless fields:** title; custom fields (names configurable, defaults: `Payment needed`,
+3. **paperless fields:** title; document date (`created`) = date printed on the letter (paperless'
+   own guess from the content is often a different date in the text; dates more than 31 days in the
+   future are ignored as misreads); custom fields (names configurable, defaults: `Payment needed`,
    `Amount`, `Due date`, `Payee IBAN`, `Payment reference`, `Reply deadline`, `Country`);
    optionally remove an inbox tag. Correspondent, document type and tags stay with paperless'
    own classifier. A PATCH of `custom_fields` replaces the whole list, so fields not managed by

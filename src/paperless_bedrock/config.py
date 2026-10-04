@@ -90,6 +90,9 @@ class Settings(BaseSettings):
     failed_tag: str = "analysis-failed"
     remove_inbox_tags: bool = False
     set_title: bool = True
+    set_created_date: bool = Field(
+        default=True, description="Set the paperless document date to the date of the letter."
+    )
     write_version: bool = True
     version_label: str = "analysis-v1"
     custom_fields: CustomFieldNames = CustomFieldNames()
