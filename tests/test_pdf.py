@@ -11,7 +11,7 @@ from paperless_bedrock.pdf import (
     render_pages,
     stamp_xmp,
 )
-from paperless_bedrock.schema import LetterAnalysis
+from paperless_bedrock.schema import LetterAnalysis, TaxClassification
 
 
 def analysis() -> LetterAnalysis:
@@ -45,7 +45,7 @@ def test_page_texts_and_render(letter_pdf: bytes) -> None:
 def test_xmp_round_trip(letter_pdf: bytes) -> None:
     a = analysis()
     stamped = stamp_xmp(letter_pdf, a, "Finanzamt Musterstadt – ESt 2024")
-    assert read_xmp_analysis(stamped) == a.model_dump(mode="json")
+    assert read_xmp_analysis(stamped) == a.model_dump(mode="json", exclude={"tax"})
     with pikepdf.open(io.BytesIO(stamped)) as pdf:
         meta = pdf.open_metadata()
         assert meta["dc:title"] == "Finanzamt Musterstadt – ESt 2024"
@@ -58,6 +58,13 @@ def test_xmp_round_trip(letter_pdf: bytes) -> None:
     twice = stamp_xmp(stamped, a, "x")
     with pikepdf.open(io.BytesIO(twice)) as pdf:
         assert pdf.Root.Metadata.read_bytes().decode().count("<pdfaSchema:namespaceURI>") == 1
+
+
+def test_tax_classification_is_not_written_to_xmp(letter_pdf: bytes) -> None:
+    a = analysis()
+    a.tax = TaxClassification(relevance="yes", scopes=["de_personal"], year=2025, reason="ESt")
+    stamped = read_xmp_analysis(stamp_xmp(letter_pdf, a, "t"))
+    assert stamped is not None and "tax" not in stamped
 
 
 def test_text_survives_stamping(letter_pdf: bytes) -> None:

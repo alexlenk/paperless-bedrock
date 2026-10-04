@@ -111,7 +111,7 @@ ingestion and OCR (paperless); backup.
   - Prefer `unknown` + an entry in `uncertainties` over guessing.
   - Distinguish *offered/optional* from *required* (e.g. "Sie können ein SEPA-Mandat erteilen" ≠
     active direct debit; "Sie haben das Recht zu widersprechen" = optional action).
-- **Optional recipient context** (config file, rarely changes): names of the people the archive
+- **Optional context file** (rarely changes; also holds the tax scopes and facts, §6a): names of the people the archive
   belongs to and their own IBANs — only so the analyst can *recognise* recipients and own
   accounts. No rules about importance or routing.
 
@@ -203,6 +203,18 @@ Languages are ISO 639-1, countries ISO 3166-1 alpha-2. Enums are closed lists;
 
 `evidence` objects: `{ "quote": "Bitte zahlen Sie spätestens am 26.10.2026", "page": 2 }`.
 
+### 6a. Tax classification (optional, household context)
+
+Configured in the context file as **tax scopes** (one per return or entity, e.g. `de_personal`,
+`us_personal`, `us_llc`, each with a paperless tag) plus **facts** for special cases. The model
+fills `tax`: `relevance` (`yes` / `no` / `unclear`), `scopes`, `year` (the year the income or
+expense belongs to), `categories`, `reason` and `evidence`. Policy: when in doubt `yes`; `unclear`
+only if a missing fact decides it. Without configured scopes `tax` is null.
+
+Output in paperless only: one tag per relevant scope, `tax-unclear`, custom fields `Tax year`
+(integer) and `Tax categories` (text). Tax tags are replaced on re-analysis. Not written to XMP:
+tax relevance depends on household context and is not a property of the letter.
+
 ## 7. Deterministic checks (after the model)
 
 | Check | Rule | On failure |
@@ -212,6 +224,7 @@ Languages are ISO 639-1, countries ISO 3166-1 alpha-2. Enums are closed lists;
 | Amounts | each amount appears in the text (DE/EN number formats) | issue + retry |
 | Dates | valid; due/deadline not before document date (unless stated) | issue |
 | Consistency | e.g. `direction=none` ⇒ no `amount_due`; `transfer_requested` ⇒ payee/IBAN or reference present | issue |
+| Tax | scopes must be configured ids; `yes` needs a scope, `no` none; missing `tax` with scopes configured | issue |
 | Schema | enums, required fields | retry |
 
 One retry with the list of issues fed back to the model. If issues remain, the analysis is still

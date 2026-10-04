@@ -1,4 +1,0 @@
-# Optional. Helps the model recognise who a letter is for and which IBANs are your own.
-# This is context only: no rules about importance or routing belong here.
-names = ["Erika Mustermann", "Max Mustermann"]
-own_ibans = ["DE02 1203 0000 0000 2020 51"]

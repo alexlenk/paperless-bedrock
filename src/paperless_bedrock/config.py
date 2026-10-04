@@ -19,13 +19,33 @@ class CustomFieldNames(BaseModel):
     payment_reference: str = "Payment reference"
     reply_deadline: str = "Reply deadline"
     country: str = "Country"
+    tax_year: str = "Tax year"
+    tax_categories: str = "Tax categories"
 
 
-class RecipientContext(BaseModel):
-    """Optional context so the model can recognise recipients and own accounts. No rules."""
+class TaxScope(BaseModel):
+    """One tax return or entity a document can be relevant for, e.g. a personal German return."""
+
+    id: str = Field(pattern=r"^[a-z0-9_]+$")
+    jurisdiction: str = Field(description="Country code, e.g. DE or US.")
+    description: str = Field(description="Who files it and what it covers, in plain words.")
+    tag: str = Field(description="paperless tag set on documents relevant for this scope.")
+
+
+class TaxContext(BaseModel):
+    scopes: list[TaxScope] = []
+    facts: list[str] = Field(
+        default=[], description="Household facts that decide special cases. Facts, not rules."
+    )
+    unclear_tag: str = "tax-unclear"
+
+
+class Context(BaseModel):
+    """Optional context so the model can recognise recipients, own accounts and tax scopes."""
 
     names: list[str] = []
     own_ibans: list[str] = []
+    tax: TaxContext = TaxContext()
 
 
 class Settings(BaseSettings):
@@ -51,7 +71,7 @@ class Settings(BaseSettings):
     max_image_pages: int = 20
     image_dpi: int = 130
     noise_profiles: list[str] = ["deutsche_post_postscan"]
-    recipient_context_file: Path | None = None
+    context_file: Path | None = None
 
     failed_tag: str = "analysis-failed"
     remove_inbox_tags: bool = False
@@ -66,8 +86,8 @@ class Settings(BaseSettings):
     def link_base(self) -> str:
         return (self.paperless_public_url or self.paperless_url).rstrip("/")
 
-    def recipient_context(self) -> RecipientContext:
-        if self.recipient_context_file is None:
-            return RecipientContext()
-        with self.recipient_context_file.open("rb") as f:
-            return RecipientContext.model_validate(tomllib.load(f))
+    def context(self) -> Context:
+        if self.context_file is None:
+            return Context()
+        with self.context_file.open("rb") as f:
+            return Context.model_validate(tomllib.load(f))

@@ -141,7 +141,8 @@ def stamp_xmp(pdf: bytes, analysis: LetterAnalysis, title: str) -> bytes:
                 meta["dc:language"] = {analysis.document.language}
             for key, value in flat_fields(analysis).items():
                 meta[f"{{{XMP_NAMESPACE}}}{key}"] = value
-            meta[f"{{{XMP_NAMESPACE}}}analysisJSON"] = analysis.model_dump_json()
+            # The tax classification depends on household context; it stays in paperless only.
+            meta[f"{{{XMP_NAMESPACE}}}analysisJSON"] = analysis.model_dump_json(exclude={"tax"})
         xml = doc.Root.Metadata.read_bytes().decode("utf-8")
         if f"<pdfaSchema:namespaceURI>{XMP_NAMESPACE}<" not in xml:
             xml = xml.replace("</rdf:RDF>", _extension_schema() + "</rdf:RDF>", 1)

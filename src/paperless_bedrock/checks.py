@@ -71,11 +71,16 @@ def _evidence(content: LetterContent) -> list[tuple[str, Evidence]]:
             (f"requested_actions[{i}].evidence[{j}]", e) for j, e in enumerate(action.evidence)
         ]
     items += [(f"deadlines[{i}]", x.evidence) for i, x in enumerate(content.deadlines)]
+    if content.tax:
+        items += [(f"tax.evidence[{i}]", e) for i, e in enumerate(content.tax.evidence)]
     return items
 
 
 def check(
-    content: LetterContent, text: str, own_ibans: list[str] | None = None
+    content: LetterContent,
+    text: str,
+    own_ibans: list[str] | None = None,
+    tax_scopes: list[str] | None = None,
 ) -> list[ValidationIssue]:
     issues: list[ValidationIssue] = []
     normalized_text = normalize(text)
@@ -126,6 +131,22 @@ def check(
         issue("payment", "transfer requested but neither payee IBAN nor reference given")
     if (payment.amount is None) != (payment.currency is None):
         issue("payment.currency", "amount and currency must be given together", "error")
+
+    # Tax classification
+    tax = content.tax
+    known_scopes = set(tax_scopes or [])
+    if tax is not None:
+        if not known_scopes:
+            issue("tax", "tax classification given but no tax scopes are configured")
+        unknown = [s for s in tax.scopes if s not in known_scopes]
+        if known_scopes and unknown:
+            issue("tax.scopes", f"unknown tax scopes {unknown}; use only {sorted(known_scopes)}")
+        if tax.relevance == "yes" and not tax.scopes:
+            issue("tax.scopes", "relevance is 'yes' but no scope is given")
+        if tax.relevance == "no" and tax.scopes:
+            issue("tax.scopes", "relevance is 'no' but scopes are given")
+    elif known_scopes:
+        issue("tax", "tax classification missing")
     return issues
 
 

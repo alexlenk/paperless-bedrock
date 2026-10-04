@@ -208,6 +208,21 @@ EscalationLevel = Literal[
 ]
 
 
+class TaxClassification(_Model):
+    """Tax relevance against the configured tax scopes (household-specific, not stored in XMP)."""
+
+    relevance: Literal["yes", "no", "unclear"]
+    scopes: list[str] = Field(default=[], description="Ids of the configured tax scopes.")
+    year: int | None = Field(
+        default=None, ge=1900, le=2100, description="Tax year the document belongs to."
+    )
+    categories: list[str] = Field(
+        default=[], description="Short category names, e.g. 'Anlage V' or 'Schedule C expense'."
+    )
+    reason: str = Field(description="One sentence, in the letter's language.")
+    evidence: list[Evidence] = []
+
+
 class LetterContent(_Model):
     """Everything the model reads from one letter. No judgement about what to do."""
 
@@ -221,6 +236,9 @@ class LetterContent(_Model):
     escalation_level: EscalationLevel
     references_previous: list[PreviousReference] = []
     uncertainties: list[str] = []
+    tax: TaxClassification | None = Field(
+        default=None, description="Only when tax scopes are configured; otherwise null."
+    )
 
 
 # --- Set by code, never by the model ---------------------------------------------------------

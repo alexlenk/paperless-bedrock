@@ -703,6 +703,73 @@
       "title": "Source",
       "type": "object"
     },
+    "TaxClassification": {
+      "additionalProperties": false,
+      "description": "Tax relevance against the configured tax scopes (household-specific, not stored in XMP).",
+      "properties": {
+        "relevance": {
+          "enum": [
+            "yes",
+            "no",
+            "unclear"
+          ],
+          "title": "Relevance",
+          "type": "string"
+        },
+        "scopes": {
+          "default": [],
+          "description": "Ids of the configured tax scopes.",
+          "items": {
+            "type": "string"
+          },
+          "title": "Scopes",
+          "type": "array"
+        },
+        "year": {
+          "anyOf": [
+            {
+              "maximum": 2100,
+              "minimum": 1900,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Tax year the document belongs to.",
+          "title": "Year"
+        },
+        "categories": {
+          "default": [],
+          "description": "Short category names, e.g. 'Anlage V' or 'Schedule C expense'.",
+          "items": {
+            "type": "string"
+          },
+          "title": "Categories",
+          "type": "array"
+        },
+        "reason": {
+          "description": "One sentence, in the letter's language.",
+          "title": "Reason",
+          "type": "string"
+        },
+        "evidence": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/Evidence"
+          },
+          "title": "Evidence",
+          "type": "array"
+        }
+      },
+      "required": [
+        "relevance",
+        "reason"
+      ],
+      "title": "TaxClassification",
+      "type": "object"
+    },
     "Validation": {
       "additionalProperties": false,
       "properties": {
@@ -827,6 +894,18 @@
       },
       "title": "Uncertainties",
       "type": "array"
+    },
+    "tax": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/TaxClassification"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Only when tax scopes are configured; otherwise null."
     },
     "schema_version": {
       "const": "1.0",

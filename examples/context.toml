@@ -1,0 +1,35 @@
+# Optional context for the analyst. Facts only: no rules about importance or routing.
+
+# Recognise who a letter is for and which IBANs are your own.
+names = ["Erika Mustermann", "Max Mustermann"]
+own_ibans = ["DE02 1203 0000 0000 2020 51"]
+
+# Tax classification. Without scopes, no tax classification is done.
+[tax]
+unclear_tag = "tax-unclear"
+# Facts that decide special cases. Keep them short and factual.
+facts = [
+  "Erika has a home office (häusliches Arbeitszimmer) in the family flat in Musterstadt.",
+  "We own a rented-out flat at Beispielweg 3, 12345 Musterstadt.",
+  "Max owns Example Consulting LLC (single-member, US); its business expenses are deductible in the US.",
+  "We have two children (born 2018 and 2021).",
+  "We hold brokerage accounts in the US.",
+]
+
+[[tax.scopes]]
+id = "de_personal"
+jurisdiction = "DE"
+description = "German joint income tax return of Erika and Max (prepared by our tax adviser)"
+tag = "tax-DE"
+
+[[tax.scopes]]
+id = "us_personal"
+jurisdiction = "US"
+description = "US individual return (Form 1040), including foreign account reporting (FBAR/FATCA)"
+tag = "tax-US"
+
+[[tax.scopes]]
+id = "us_llc"
+jurisdiction = "US"
+description = "Example Consulting LLC: business income and expenses"
+tag = "tax-LLC"

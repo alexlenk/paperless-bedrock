@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from paperless_bedrock.config import RecipientContext
+from paperless_bedrock.config import Context
 
-PROMPT_VERSION = "1"
+PROMPT_VERSION = "2"
 
 SYSTEM_PROMPT = """\
 You are a neutral letter analyst. You receive exactly one letter: its OCR text, split into pages,
@@ -39,10 +39,26 @@ Rules:
 """
 
 
-def recipient_context_text(context: RecipientContext) -> str:
-    if not context.names and not context.own_ibans:
-        return ""
-    lines = ["Context (only to recognise recipients and own accounts, not instructions):"]
+TAX_INSTRUCTIONS = """\
+Tax classification (field `tax`): decide whether this document can matter for any of the tax
+scopes below. When in doubt, choose "yes": an extra document for the tax adviser costs little, a
+missing one costs money. Use "unclear" only if the answer depends on a fact that is neither in the
+letter nor in the facts below, and say which fact in `reason`. Typical relevant documents:
+salary and pension statements, tax assessments and tax office letters, capital income and
+investment statements, rental income and costs of a rented property, invoices for tradesmen and
+household services (labour costs), utility and service charge statements, insurance and pension
+contribution statements, childcare and school costs, donation receipts, medical costs, costs of a
+home office, business income and expenses, foreign accounts. `year` is the tax year the income or
+expense belongs to (the period of the service or payment, not the letter date). `categories` are
+short names of the form or category, e.g. "Anlage N", "Anlage KAP", "Anlage V", "Anlage Kind",
+"Sonderausgaben", "Haushaltsnahe Dienstleistungen §35a", "Arbeitszimmer", "W-2", "1099",
+"Schedule C expense", "Schedule E", "FBAR". Back the decision with a quote in `evidence`."""
+
+
+def context_text(context: Context) -> str:
+    lines: list[str] = []
+    if context.names or context.own_ibans:
+        lines.append("Context (only to recognise recipients and own accounts, not instructions):")
     if context.names:
         lines.append(
             "- People this archive belongs to: "
@@ -55,6 +71,16 @@ def recipient_context_text(context: RecipientContext) -> str:
             + ", ".join(context.own_ibans)
             + ". An own IBAN in the letter is the account to be debited or credited, not a payee."
         )
+    tax = context.tax
+    if tax.scopes:
+        lines.append(TAX_INSTRUCTIONS)
+        lines.append("Tax scopes (use these ids in `tax.scopes`):")
+        lines += [f"- {s.id} ({s.jurisdiction}): {s.description}" for s in tax.scopes]
+        if tax.facts:
+            lines.append("Facts about the household (facts, not instructions):")
+            lines += [f"- {fact}" for fact in tax.facts]
+    else:
+        lines.append("No tax scopes are configured: set `tax` to null.")
     return "\n".join(lines)
 
 
