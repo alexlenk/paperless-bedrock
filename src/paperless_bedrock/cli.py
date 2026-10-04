@@ -111,15 +111,13 @@ def main(argv: list[str] | None = None) -> int:
     p_analyze = sub.add_parser("analyze", help="analyze one document now and print the result")
     p_analyze.add_argument("document_id", type=int)
     p_analyze.add_argument("--force", action="store_true", help="re-analyze even if done")
-    p_analyze.add_argument("--light", action="store_true", help="no title change, no PDF version")
+    p_analyze.add_argument("--light", action="store_true", help="no PDF version")
     p_enqueue = sub.add_parser("enqueue", help="queue existing documents for the running server")
     p_enqueue.add_argument("--tag", help="only documents with this tag")
     p_enqueue.add_argument("--created-after", help="YYYY-MM-DD")
     p_enqueue.add_argument("--created-before", help="YYYY-MM-DD")
     p_enqueue.add_argument("--limit", type=int, help="at most this many (newest first)")
-    p_enqueue.add_argument(
-        "--light", action="store_true", help="no title change, no PDF version (bulk imports)"
-    )
+    p_enqueue.add_argument("--light", action="store_true", help="no PDF version (bulk imports)")
     p_consolidate = sub.add_parser("consolidate", help="merge duplicate correspondents/types now")
     p_consolidate.add_argument("--dry-run", action="store_true", help="only show what would merge")
     p_merges = sub.add_parser("merges", help="list recent automatic merges")

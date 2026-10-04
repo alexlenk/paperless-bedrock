@@ -385,7 +385,7 @@ def test_person_tags_and_light_mode(letter_pdf: bytes, tmp_path: Path) -> None:
     assert outcome.analysis.paperless.persons == ["Erika Mustermann"]
     patch = fake.patches[0]
     assert patch["tags"] == [5, 30]
-    assert "title" not in patch and fake.versions == []
+    assert patch["title"].startswith("Finanzamt Musterstadt") and fake.versions == []
     assert len(fake.notes) == 1
 
 

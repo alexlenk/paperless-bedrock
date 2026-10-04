@@ -149,7 +149,7 @@ class Pipeline:
         return self.settings.assign_correspondent or self.settings.assign_document_type
 
     def run(self, document_id: int, *, force: bool = False, light: bool = False) -> Outcome:
-        """Analyse one document. `light`: no title change and no PDF version (bulk imports)."""
+        """Analyse one document. `light`: no PDF version (bulk imports of older documents)."""
         doc = self.paperless.get_document(document_id)
         checksum = f"sha256:{doc.checksum}"
         if not force and existing_analysis(self.paperless.list_notes(doc.id), checksum):
@@ -401,7 +401,7 @@ class Pipeline:
         s = self.settings
         title = title_for(analysis)
         update: dict[str, Any] = {}
-        if s.set_title and not light:
+        if s.set_title:
             update["title"] = title
         assignment = analysis.paperless
         if (

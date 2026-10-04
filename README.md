@@ -148,7 +148,8 @@ Example: 1,900 files exported from another DMS.
 2. Copy the files into `consume/import/` (with `PAPERLESS_CONSUMER_SUBDIRS_AS_TAGS=true` every
    document gets the tag `import`). paperless skips byte-identical duplicates.
 3. When paperless is done, queue them in batches, newest first. Batch jobs run only when no new
-   letter is waiting; `--light` skips the title change and the PDF version:
+   letter is waiting; `--light` skips the PDF version (titles, fields, tags and notes are still
+   written):
 
    ```sh
    docker exec paperless-bedrock paperless-bedrock enqueue --tag import --light \

@@ -241,7 +241,7 @@ The model has no memory and no tools. Consistency comes from the archive itself,
   delete. Objects created by a person (owner set, not created by this tool) are never merged away.
   `undo` recreates the object, moves its documents back and blocks the pair forever.
 - **Bulk import:** `enqueue --tag ... --light`: batch jobs have lower priority than webhook jobs;
-  light = no title change, no PDF version.
+  light = no PDF version (titles are still set: imported file names are often meaningless).
 
 ## 7. Deterministic checks (after the model)
 
