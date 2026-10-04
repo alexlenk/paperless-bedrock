@@ -43,6 +43,7 @@ from paperless_bedrock.schema import Analyzer as AnalyzerInfo
 log = logging.getLogger(__name__)
 
 TITLE_MAX = 128
+FUTURE_DATE_TOLERANCE = dt.timedelta(days=31)
 STRING_FIELD_MAX = 128
 
 
@@ -403,6 +404,14 @@ class Pipeline:
         update: dict[str, Any] = {}
         if s.set_title:
             update["title"] = title
+        letter_date = analysis.document.date
+        if (
+            s.set_created_date
+            and letter_date is not None
+            and letter_date != doc.created
+            and letter_date <= dt.date.today() + FUTURE_DATE_TOLERANCE  # guard against misreads
+        ):
+            update["created"] = letter_date.isoformat()
         assignment = analysis.paperless
         if (
             assignment

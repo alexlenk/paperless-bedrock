@@ -104,6 +104,7 @@ All settings are environment variables.
 | `FAILED_TAG` | `analysis-failed` | Tag for failed analyses |
 | `REMOVE_INBOX_TAGS` | `false` | Remove inbox tags after analysis |
 | `SET_TITLE` | `true` | Set the title to "Sender – Subject" |
+| `SET_CREATED_DATE` | `true` | Set the paperless document date to the date printed on the letter |
 | `WRITE_VERSION` | `true` | Add a PDF version with XMP metadata |
 | `VERSION_LABEL` | `analysis-v1` | Label of that version |
 | `CUSTOM_FIELDS__<KEY>` | see table above | Rename a custom field, e.g. `CUSTOM_FIELDS__AMOUNT=Betrag` |

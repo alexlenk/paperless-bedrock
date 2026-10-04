@@ -135,7 +135,14 @@ def test_original_used_when_no_archive(letter_pdf: bytes, tmp_path: Path) -> Non
 def test_optional_outputs_can_be_disabled(letter_pdf: bytes, tmp_path: Path) -> None:
     fake = FakePaperless(letter_pdf)
     fake.custom_fields = {}
-    pipeline(fake, FakeAnalyzer(good()), tmp_path, set_title=False, write_version=False).run(1)
+    pipeline(
+        fake,
+        FakeAnalyzer(good()),
+        tmp_path,
+        set_title=False,
+        write_version=False,
+        set_created_date=False,
+    ).run(1)
     assert fake.patches == [] and fake.versions == [] and len(fake.notes) == 1
 
 
@@ -403,3 +410,30 @@ def test_reindex_takes_paperless_assignments(letter_pdf: bytes, tmp_path: Path) 
             )
         ]
     ) == {999}
+
+
+def test_document_date_is_set_from_the_letter(letter_pdf: bytes, tmp_path: Path) -> None:
+    fake = FakePaperless(letter_pdf)  # paperless guessed 2026-09-28; the letter says 2026-09-22
+    pipeline(fake, FakeAnalyzer(good()), tmp_path).run(1)
+    assert fake.patches[0]["created"] == "2026-09-22"
+
+
+def test_document_date_is_left_alone_when_equal_missing_or_implausible(
+    letter_pdf: bytes, tmp_path: Path
+) -> None:
+    fake = FakePaperless(letter_pdf)
+    fake.doc["created"] = "2026-09-22"
+    pipeline(fake, FakeAnalyzer(good()), tmp_path).run(1)
+    assert "created" not in fake.patches[0]
+
+    for i, date in enumerate([None, "2099-01-01"]):
+        data = content_dict()
+        data["document"]["date"] = date
+        fake = FakePaperless(letter_pdf)
+        content = LetterContent.model_validate(data)
+        pipeline(fake, FakeAnalyzer(content, content), tmp_path / str(i)).run(1)
+        assert all("created" not in p for p in fake.patches)
+
+    fake = FakePaperless(letter_pdf)
+    pipeline(fake, FakeAnalyzer(good()), tmp_path / "off", set_created_date=False).run(1)
+    assert all("created" not in p for p in fake.patches)
