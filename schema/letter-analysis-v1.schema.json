@@ -1,0 +1,863 @@
+{
+  "$defs": {
+    "Analyzer": {
+      "additionalProperties": false,
+      "properties": {
+        "model": {
+          "title": "Model",
+          "type": "string"
+        },
+        "prompt_version": {
+          "title": "Prompt Version",
+          "type": "string"
+        },
+        "tool_version": {
+          "title": "Tool Version",
+          "type": "string"
+        },
+        "analyzed_at": {
+          "format": "date-time",
+          "title": "Analyzed At",
+          "type": "string"
+        }
+      },
+      "required": [
+        "model",
+        "prompt_version",
+        "tool_version",
+        "analyzed_at"
+      ],
+      "title": "Analyzer",
+      "type": "object"
+    },
+    "Deadline": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": [
+            "payment_due",
+            "reply_by",
+            "objection_period_end",
+            "effective_date",
+            "appointment",
+            "contract_end",
+            "other"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "date": {
+          "format": "date",
+          "title": "Date",
+          "type": "string"
+        },
+        "evidence": {
+          "$ref": "#/$defs/Evidence"
+        }
+      },
+      "required": [
+        "kind",
+        "date",
+        "evidence"
+      ],
+      "title": "Deadline",
+      "type": "object"
+    },
+    "Document": {
+      "additionalProperties": false,
+      "properties": {
+        "language": {
+          "description": "ISO 639-1 code, or 'unknown'.",
+          "title": "Language",
+          "type": "string"
+        },
+        "country": {
+          "description": "ISO 3166-1 alpha-2 code of the sender's country, or 'unknown'.",
+          "title": "Country",
+          "type": "string"
+        },
+        "date": {
+          "anyOf": [
+            {
+              "format": "date",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Date printed on the letter.",
+          "title": "Date"
+        },
+        "type": {
+          "enum": [
+            "invoice",
+            "payment_reminder",
+            "dunning_notice",
+            "debt_collection",
+            "tax_assessment",
+            "official_notice",
+            "court_document",
+            "contract",
+            "contract_change",
+            "premium_change",
+            "policy",
+            "statement",
+            "receipt",
+            "payment_confirmation",
+            "direct_debit_confirmation",
+            "appointment",
+            "information",
+            "marketing",
+            "other"
+          ],
+          "title": "Type",
+          "type": "string"
+        },
+        "subject": {
+          "title": "Subject",
+          "type": "string"
+        },
+        "summary": {
+          "description": "2-3 sentence neutral summary, in the letter's language.",
+          "title": "Summary",
+          "type": "string"
+        },
+        "enclosures": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Enclosures",
+          "type": "array"
+        }
+      },
+      "required": [
+        "language",
+        "country",
+        "date",
+        "type",
+        "subject",
+        "summary"
+      ],
+      "title": "Document",
+      "type": "object"
+    },
+    "Evidence": {
+      "additionalProperties": false,
+      "properties": {
+        "quote": {
+          "description": "Verbatim quote from the letter text.",
+          "minLength": 1,
+          "title": "Quote",
+          "type": "string"
+        },
+        "page": {
+          "description": "1-based page number of the quote.",
+          "minimum": 1,
+          "title": "Page",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "quote",
+        "page"
+      ],
+      "title": "Evidence",
+      "type": "object"
+    },
+    "Identifier": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": [
+            "tax_number",
+            "customer_number",
+            "contract_number",
+            "policy_number",
+            "case_reference",
+            "invoice_number",
+            "vat_id",
+            "other"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "value": {
+          "title": "Value",
+          "type": "string"
+        },
+        "evidence": {
+          "$ref": "#/$defs/Evidence"
+        }
+      },
+      "required": [
+        "kind",
+        "value",
+        "evidence"
+      ],
+      "title": "Identifier",
+      "type": "object"
+    },
+    "InputInfo": {
+      "additionalProperties": false,
+      "properties": {
+        "pages_sent": {
+          "minimum": 0,
+          "title": "Pages Sent",
+          "type": "integer"
+        },
+        "images_sent": {
+          "title": "Images Sent",
+          "type": "boolean"
+        },
+        "truncated": {
+          "title": "Truncated",
+          "type": "boolean"
+        },
+        "noise_pages_dropped": {
+          "default": [],
+          "items": {
+            "type": "integer"
+          },
+          "title": "Noise Pages Dropped",
+          "type": "array"
+        },
+        "page_text_quality": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "default": {},
+          "description": "Share of real words per page (0..1); low values hint at OCR problems.",
+          "title": "Page Text Quality",
+          "type": "object"
+        }
+      },
+      "required": [
+        "pages_sent",
+        "images_sent",
+        "truncated"
+      ],
+      "title": "InputInfo",
+      "type": "object"
+    },
+    "MoneyItem": {
+      "additionalProperties": false,
+      "properties": {
+        "role": {
+          "enum": [
+            "amount_due",
+            "already_paid",
+            "refund",
+            "credit",
+            "new_premium",
+            "old_premium",
+            "total",
+            "fee",
+            "interest",
+            "other"
+          ],
+          "title": "Role",
+          "type": "string"
+        },
+        "amount": {
+          "description": "Decimal string, e.g. '447.19'.",
+          "pattern": "^-?\\d+(\\.\\d{1,2})?$",
+          "title": "Amount",
+          "type": "string"
+        },
+        "currency": {
+          "description": "ISO 4217 code, e.g. 'EUR'.",
+          "pattern": "^[A-Z]{3}$",
+          "title": "Currency",
+          "type": "string"
+        },
+        "evidence": {
+          "$ref": "#/$defs/Evidence"
+        }
+      },
+      "required": [
+        "role",
+        "amount",
+        "currency",
+        "evidence"
+      ],
+      "title": "MoneyItem",
+      "type": "object"
+    },
+    "Payment": {
+      "additionalProperties": false,
+      "properties": {
+        "direction": {
+          "enum": [
+            "recipient_pays",
+            "recipient_receives",
+            "none",
+            "unknown"
+          ],
+          "title": "Direction",
+          "type": "string"
+        },
+        "method_stated": {
+          "enum": [
+            "transfer_requested",
+            "direct_debit_active",
+            "direct_debit_offered",
+            "card_charged",
+            "already_paid",
+            "offset",
+            "none",
+            "unknown"
+          ],
+          "title": "Method Stated",
+          "type": "string"
+        },
+        "amount": {
+          "anyOf": [
+            {
+              "description": "Decimal string, e.g. '447.19'.",
+              "pattern": "^-?\\d+(\\.\\d{1,2})?$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Amount"
+        },
+        "currency": {
+          "anyOf": [
+            {
+              "description": "ISO 4217 code, e.g. 'EUR'.",
+              "pattern": "^[A-Z]{3}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Currency"
+        },
+        "due_date": {
+          "anyOf": [
+            {
+              "format": "date",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Due Date"
+        },
+        "payee_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Payee Name"
+        },
+        "payee_iban": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Payee Iban"
+        },
+        "payee_bic": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Payee Bic"
+        },
+        "reference": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reference"
+        },
+        "girocode_present": {
+          "default": false,
+          "title": "Girocode Present",
+          "type": "boolean"
+        },
+        "evidence": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/Evidence"
+          },
+          "title": "Evidence",
+          "type": "array"
+        }
+      },
+      "required": [
+        "direction",
+        "method_stated"
+      ],
+      "title": "Payment",
+      "type": "object"
+    },
+    "PreviousReference": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": [
+            "invoice_number",
+            "letter_date",
+            "case_reference",
+            "other"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "value": {
+          "title": "Value",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "value"
+      ],
+      "title": "PreviousReference",
+      "type": "object"
+    },
+    "Recipients": {
+      "additionalProperties": false,
+      "properties": {
+        "addressed_to": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Addressed To",
+          "type": "array"
+        },
+        "concerning_persons": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Concerning Persons",
+          "type": "array"
+        },
+        "known_person_match": {
+          "default": [],
+          "description": "Names from the optional recipient context that match this letter.",
+          "items": {
+            "type": "string"
+          },
+          "title": "Known Person Match",
+          "type": "array"
+        }
+      },
+      "title": "Recipients",
+      "type": "object"
+    },
+    "RequestedAction": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "enum": [
+            "pay",
+            "reply",
+            "sign_and_return",
+            "send_documents",
+            "provide_information",
+            "attend_appointment",
+            "call",
+            "renew",
+            "cancel",
+            "object_or_appeal",
+            "register",
+            "other"
+          ],
+          "title": "Action",
+          "type": "string"
+        },
+        "obligation": {
+          "enum": [
+            "required",
+            "optional"
+          ],
+          "title": "Obligation",
+          "type": "string"
+        },
+        "deadline": {
+          "anyOf": [
+            {
+              "format": "date",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Deadline"
+        },
+        "deadline_text": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Deadline as written in the letter.",
+          "title": "Deadline Text"
+        },
+        "consequence_if_missed": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Consequence If Missed"
+        },
+        "description": {
+          "title": "Description",
+          "type": "string"
+        },
+        "evidence": {
+          "items": {
+            "$ref": "#/$defs/Evidence"
+          },
+          "minItems": 1,
+          "title": "Evidence",
+          "type": "array"
+        }
+      },
+      "required": [
+        "action",
+        "obligation",
+        "description",
+        "evidence"
+      ],
+      "title": "RequestedAction",
+      "type": "object"
+    },
+    "Sender": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "sender_type": {
+          "enum": [
+            "tax_office",
+            "court",
+            "government",
+            "health_insurer",
+            "insurer",
+            "bank",
+            "utility",
+            "telecom",
+            "medical_provider",
+            "employer",
+            "tax_advisor",
+            "lawyer",
+            "notary",
+            "debt_collector",
+            "landlord",
+            "retailer",
+            "school",
+            "other"
+          ],
+          "title": "Sender Type",
+          "type": "string"
+        },
+        "address": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Address"
+        },
+        "identifiers": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/Identifier"
+          },
+          "title": "Identifiers",
+          "type": "array"
+        }
+      },
+      "required": [
+        "name",
+        "sender_type"
+      ],
+      "title": "Sender",
+      "type": "object"
+    },
+    "Source": {
+      "additionalProperties": false,
+      "properties": {
+        "paperless_document_id": {
+          "title": "Paperless Document Id",
+          "type": "integer"
+        },
+        "paperless_url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Paperless Url"
+        },
+        "source_checksum": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Source Checksum",
+          "type": "string"
+        },
+        "channel": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Free label from configuration.",
+          "title": "Channel"
+        },
+        "scan_job_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Scan Job Id"
+        },
+        "received_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Received At"
+        },
+        "pages": {
+          "minimum": 1,
+          "title": "Pages",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "paperless_document_id",
+        "source_checksum",
+        "pages"
+      ],
+      "title": "Source",
+      "type": "object"
+    },
+    "Validation": {
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "enum": [
+            "passed",
+            "passed_with_warnings",
+            "failed"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "issues": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/ValidationIssue"
+          },
+          "title": "Issues",
+          "type": "array"
+        }
+      },
+      "required": [
+        "status"
+      ],
+      "title": "Validation",
+      "type": "object"
+    },
+    "ValidationIssue": {
+      "additionalProperties": false,
+      "properties": {
+        "field": {
+          "description": "Dotted path, e.g. 'payment.payee_iban'.",
+          "title": "Field",
+          "type": "string"
+        },
+        "problem": {
+          "title": "Problem",
+          "type": "string"
+        },
+        "severity": {
+          "enum": [
+            "warning",
+            "error"
+          ],
+          "title": "Severity",
+          "type": "string"
+        }
+      },
+      "required": [
+        "field",
+        "problem",
+        "severity"
+      ],
+      "title": "ValidationIssue",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "The stored analysis record (schema v1).",
+  "properties": {
+    "document": {
+      "$ref": "#/$defs/Document"
+    },
+    "sender": {
+      "$ref": "#/$defs/Sender"
+    },
+    "recipients": {
+      "$ref": "#/$defs/Recipients"
+    },
+    "money": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/MoneyItem"
+      },
+      "title": "Money",
+      "type": "array"
+    },
+    "payment": {
+      "$ref": "#/$defs/Payment"
+    },
+    "requested_actions": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/RequestedAction"
+      },
+      "title": "Requested Actions",
+      "type": "array"
+    },
+    "deadlines": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/Deadline"
+      },
+      "title": "Deadlines",
+      "type": "array"
+    },
+    "escalation_level": {
+      "enum": [
+        "none",
+        "reminder",
+        "dunning_1",
+        "dunning_2_plus",
+        "debt_collection",
+        "legal",
+        "unknown"
+      ],
+      "title": "Escalation Level",
+      "type": "string"
+    },
+    "references_previous": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/PreviousReference"
+      },
+      "title": "References Previous",
+      "type": "array"
+    },
+    "uncertainties": {
+      "default": [],
+      "items": {
+        "type": "string"
+      },
+      "title": "Uncertainties",
+      "type": "array"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "analyzer": {
+      "$ref": "#/$defs/Analyzer"
+    },
+    "source": {
+      "$ref": "#/$defs/Source"
+    },
+    "input": {
+      "$ref": "#/$defs/InputInfo"
+    },
+    "validation": {
+      "$ref": "#/$defs/Validation"
+    }
+  },
+  "required": [
+    "document",
+    "sender",
+    "recipients",
+    "payment",
+    "escalation_level",
+    "analyzer",
+    "source",
+    "input",
+    "validation"
+  ],
+  "title": "LetterAnalysis",
+  "type": "object"
+}
