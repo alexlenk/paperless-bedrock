@@ -30,6 +30,61 @@
       "title": "Analyzer",
       "type": "object"
     },
+    "Assignment": {
+      "additionalProperties": false,
+      "description": "How the classification was mapped to paperless objects (set by code).",
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "integer"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "matched_by": {
+          "enum": [
+            "identity_reference",
+            "exact",
+            "alias",
+            "judge",
+            "created",
+            "existing"
+          ],
+          "title": "Matched By",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "matched_by"
+      ],
+      "title": "Assignment",
+      "type": "object"
+    },
+    "Classification": {
+      "additionalProperties": false,
+      "description": "paperless correspondent and document type, chosen from the lists in the prompt.",
+      "properties": {
+        "correspondent": {
+          "description": "The sender organisation or person: an exact name from the correspondent list if it is the same sender, otherwise a short canonical name (official name, no legal form suffix variations, no department).",
+          "title": "Correspondent",
+          "type": "string"
+        },
+        "document_type": {
+          "description": "An exact name from the document type list if one fits, otherwise a short new generic type name (plural-free, e.g. 'Invoice', 'Tax assessment').",
+          "title": "Document Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "correspondent",
+        "document_type"
+      ],
+      "title": "Classification",
+      "type": "object"
+    },
     "Deadline": {
       "additionalProperties": false,
       "properties": {
@@ -178,6 +233,8 @@
             "case_reference",
             "invoice_number",
             "vat_id",
+            "creditor_id",
+            "commercial_register",
             "other"
           ],
           "title": "Kind",
@@ -283,6 +340,43 @@
         "evidence"
       ],
       "title": "MoneyItem",
+      "type": "object"
+    },
+    "PaperlessAssignment": {
+      "additionalProperties": false,
+      "properties": {
+        "correspondent": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Assignment"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "document_type": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Assignment"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "persons": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Persons",
+          "type": "array"
+        }
+      },
+      "title": "PaperlessAssignment",
       "type": "object"
     },
     "Payment": {
@@ -907,6 +1001,17 @@
       "default": null,
       "description": "Only when tax scopes are configured; otherwise null."
     },
+    "classification": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Classification"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
     "schema_version": {
       "const": "1.0",
       "default": "1.0",
@@ -924,6 +1029,17 @@
     },
     "validation": {
       "$ref": "#/$defs/Validation"
+    },
+    "paperless": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/PaperlessAssignment"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
     }
   },
   "required": [

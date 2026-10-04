@@ -97,6 +97,8 @@ class Identifier(_Model):
         "case_reference",
         "invoice_number",
         "vat_id",
+        "creditor_id",
+        "commercial_register",
         "other",
     ]
     value: str
@@ -223,6 +225,20 @@ class TaxClassification(_Model):
     evidence: list[Evidence] = []
 
 
+class Classification(_Model):
+    """paperless correspondent and document type, chosen from the lists in the prompt."""
+
+    correspondent: str = Field(
+        description="The sender organisation or person: an exact name from the correspondent list "
+        "if it is the same sender, otherwise a short canonical name (official name, no legal form "
+        "suffix variations, no department)."
+    )
+    document_type: str = Field(
+        description="An exact name from the document type list if one fits, otherwise a short new "
+        "generic type name (plural-free, e.g. 'Invoice', 'Tax assessment')."
+    )
+
+
 class LetterContent(_Model):
     """Everything the model reads from one letter. No judgement about what to do."""
 
@@ -239,6 +255,7 @@ class LetterContent(_Model):
     tax: TaxClassification | None = Field(
         default=None, description="Only when tax scopes are configured; otherwise null."
     )
+    classification: Classification | None = None
 
 
 # --- Set by code, never by the model ---------------------------------------------------------
@@ -278,6 +295,20 @@ class ValidationIssue(_Model):
     severity: Literal["warning", "error"]
 
 
+class Assignment(_Model):
+    """How the classification was mapped to paperless objects (set by code)."""
+
+    id: int
+    name: str
+    matched_by: Literal["identity_reference", "exact", "alias", "judge", "created", "existing"]
+
+
+class PaperlessAssignment(_Model):
+    correspondent: Assignment | None = None
+    document_type: Assignment | None = None
+    persons: list[str] = []
+
+
 class Validation(_Model):
     status: Literal["passed", "passed_with_warnings", "failed"]
     issues: list[ValidationIssue] = []
@@ -291,3 +322,4 @@ class LetterAnalysis(LetterContent):
     source: Source
     input: InputInfo
     validation: Validation
+    paperless: PaperlessAssignment | None = None

@@ -6,10 +6,10 @@ from conftest import content_dict
 from fake_paperless import FakePaperless
 
 from paperless_bedrock.config import Settings
-from paperless_bedrock.model import ModelRequest, ModelResult
+from paperless_bedrock.model import JudgeRequest, JudgeResult, ModelRequest, ModelResult
 from paperless_bedrock.paperless import PaperlessClient, PaperlessError
 from paperless_bedrock.pdf import read_xmp_analysis
-from paperless_bedrock.schema import LetterContent
+from paperless_bedrock.schema import Assignment, LetterContent
 from paperless_bedrock.service import Pipeline, convert
 
 
@@ -25,6 +25,18 @@ class FakeAnalyzer:
         return ModelResult(self.responses.pop(0), usage={"inputTokens": 100, "outputTokens": 10})
 
 
+class FakeJudge:
+    def __init__(self, *results: JudgeResult) -> None:
+        self.results = list(results)
+        self.requests: list[JudgeRequest] = []
+
+    def judge(self, request: JudgeRequest) -> JudgeResult:
+        self.requests.append(request)
+        if self.results:
+            return self.results.pop(0)
+        return JudgeResult(match_id=None, confident=False, reason="no match")
+
+
 def settings(tmp_path: Path, **overrides: object) -> Settings:
     values = {
         "paperless_url": "http://paperless",
@@ -34,9 +46,15 @@ def settings(tmp_path: Path, **overrides: object) -> Settings:
     return Settings(**{**values, **overrides})  # type: ignore[arg-type]
 
 
-def pipeline(fake: FakePaperless, analyzer: FakeAnalyzer, tmp_path: Path, **kw: object) -> Pipeline:
+def pipeline(
+    fake: FakePaperless,
+    analyzer: FakeAnalyzer,
+    tmp_path: Path,
+    judge: FakeJudge | None = None,
+    **kw: object,
+) -> Pipeline:
     client = PaperlessClient("http://paperless", "secret", transport=fake.transport())
-    return Pipeline(settings(tmp_path, **kw), client, analyzer)
+    return Pipeline(settings(tmp_path, **kw), client, analyzer, judge or FakeJudge())
 
 
 def good() -> LetterContent:
@@ -227,3 +245,161 @@ def test_without_tax_scopes_tags_are_untouched(letter_pdf: bytes, tmp_path: Path
     pipeline(fake, analyzer, tmp_path).run(1)
     assert "tags" not in fake.patches[0]
     assert "set `tax` to null" in analyzer.requests[0].system_prompt
+
+
+# --- correspondents, document types, persons, knowledge index ----------------------------
+
+
+def assigned(outcome: object, field: str = "correspondent") -> Assignment:
+    analysis = getattr(outcome, "analysis", None)
+    assert analysis is not None and analysis.paperless is not None
+    value = getattr(analysis.paperless, field)
+    assert isinstance(value, Assignment)
+    return value
+
+
+def classified(
+    correspondent: str, document_type: str = "Tax assessment", **extra: object
+) -> LetterContent:
+    data = content_dict(
+        classification={"correspondent": correspondent, "document_type": document_type}
+    )
+    data.update(extra)
+    return LetterContent.model_validate(data)
+
+
+CREDITOR = {
+    "kind": "creditor_id",
+    "value": "DE98ZZZ09999999999",
+    "evidence": {"quote": "Finanzamt Musterstadt", "page": 1},
+}
+
+
+def test_new_correspondent_and_type_are_created_and_assigned(
+    letter_pdf: bytes, tmp_path: Path
+) -> None:
+    fake = FakePaperless(letter_pdf)
+    analyzer = FakeAnalyzer(classified("Finanzamt Musterstadt"))
+    outcome = pipeline(fake, analyzer, tmp_path).run(1)
+
+    assert outcome.analysis is not None and outcome.analysis.paperless is not None
+    corr = outcome.analysis.paperless.correspondent
+    assert corr is not None and corr.matched_by == "created"
+    assert fake.objects["correspondents"][corr.id]["name"] == "Finanzamt Musterstadt"
+    assert fake.patches[0]["correspondent"] == corr.id
+    assert fake.patches[0]["document_type"] == assigned(outcome, "document_type").id
+    assert "Existing correspondents" in analyzer.requests[0].system_prompt
+
+
+def test_existing_and_alias_names_are_reused(letter_pdf: bytes, tmp_path: Path) -> None:
+    fake = FakePaperless(letter_pdf)
+    fake.objects["correspondents"][5] = {"name": "Finanzamt Musterstadt", "owner": None}
+    p = pipeline(fake, FakeAnalyzer(classified("finanzamt  musterstadt")), tmp_path)
+    outcome = p.run(1)
+    assert outcome.analysis.paperless.correspondent.matched_by == "exact"  # type: ignore[union-attr]
+
+    p.index.add_alias("correspondent", "FA Musterstadt", 5)
+    p.analyzer = FakeAnalyzer(classified("FA Musterstadt"))
+    outcome = p.run(1, force=True)
+    assert outcome.analysis.paperless.correspondent.matched_by == "alias"  # type: ignore[union-attr]
+    assert len(fake.objects["correspondents"]) == 1
+
+
+def test_similar_name_is_judged(letter_pdf: bytes, tmp_path: Path) -> None:
+    fake = FakePaperless(letter_pdf)
+    fake.objects["correspondents"][5] = {"name": "Finanzamt Musterstadt", "owner": None}
+    judge = FakeJudge(JudgeResult(match_id=5, confident=True, reason="abbreviation"))
+    p = pipeline(fake, FakeAnalyzer(classified("Finanzamt Musterstdt")), tmp_path, judge=judge)
+    outcome = p.run(1)
+    assert outcome.analysis.paperless.correspondent.id == 5  # type: ignore[union-attr]
+    assert judge.requests[0].candidates[0]["name"] == "Finanzamt Musterstadt"
+    assert p.index.alias_target("correspondent", "Finanzamt Musterstdt") == 5
+
+    # a confident "no" creates a new correspondent
+    fake2 = FakePaperless(letter_pdf)
+    fake2.objects["correspondents"][5] = {"name": "Stadtwerke Musterstadt", "owner": None}
+    p2 = pipeline(fake2, FakeAnalyzer(classified("Stadtwerke Musterstadt Netze")), tmp_path / "b")
+    assert p2.run(1).analysis.paperless.correspondent.matched_by == "created"  # type: ignore[union-attr]
+
+
+def test_identity_reference_decides_sender(letter_pdf: bytes, tmp_path: Path) -> None:
+    fake = FakePaperless(letter_pdf)
+    sender = {
+        "name": "Stadtwerke Musterstadt GmbH",
+        "sender_type": "utility",
+        "identifiers": [CREDITOR],
+    }
+    first = classified("Stadtwerke Musterstadt GmbH", sender=sender)
+    p = pipeline(fake, FakeAnalyzer(first), tmp_path)
+    created = assigned(p.run(1))
+
+    judge = FakeJudge()
+    p.resolver.judge = judge
+    second = classified("SWM Energie", sender={**sender, "name": "SWM Energie"})
+    p.analyzer = FakeAnalyzer(second)
+    assignment = assigned(p.run(1, force=True))
+    assert assignment.id == created.id and assignment.matched_by == "identity_reference"
+    assert judge.requests == []
+    assert p.index.alias_target("correspondent", "SWM Energie") == created.id
+
+
+def test_related_documents_are_given_as_context(letter_pdf: bytes, tmp_path: Path) -> None:
+    fake = FakePaperless(letter_pdf)
+    p = pipeline(fake, FakeAnalyzer(classified("Finanzamt Musterstadt")), tmp_path)
+    p.index.record_document(
+        42,
+        correspondent_id=None,
+        document_type_id=None,
+        sender_name="Finanzamt Musterstadt",
+        sender_address=None,
+        subject="Bescheid 2023",
+        document_date="2025-05-01",
+        summary={"document_id": 42, "subject": "Bescheid 2023"},
+        refs=[
+            __import__("paperless_bedrock.identifiers").identifiers.Reference(
+                "tax_number", "1234567890"
+            )
+        ],
+    )
+    p.run(1)
+    assert '"document_id": 42' in p.analyzer.requests[0].text  # type: ignore[attr-defined]
+    assert "tax_number:1234567890" in p.analyzer.requests[0].text  # type: ignore[attr-defined]
+
+
+def test_person_tags_and_light_mode(letter_pdf: bytes, tmp_path: Path) -> None:
+    path = tmp_path / "context.toml"
+    path.write_text(
+        '[[persons]]\nname = "Erika Mustermann"\ntag = "Erika"\n'
+        'aliases = ["Dr. Erika Mustermann"]\n'
+        '[[persons]]\nname = "Max Mustermann"\ntag = "Max"\n'
+    )
+    fake = FakePaperless(letter_pdf)
+    fake.tags.update({"Erika": 30, "Max": 31})
+    fake.doc["tags"] = [5, 31]  # stale person tag
+    content = classified(
+        "Finanzamt Musterstadt", recipients={"known_person_match": ["Dr. Erika Mustermann"]}
+    )
+    p = pipeline(fake, FakeAnalyzer(content), tmp_path, context_file=path)
+    outcome = p.run(1, light=True)
+    assert outcome.analysis is not None and outcome.analysis.paperless is not None
+    assert outcome.analysis.paperless.persons == ["Erika Mustermann"]
+    patch = fake.patches[0]
+    assert patch["tags"] == [5, 30]
+    assert "title" not in patch and fake.versions == []
+    assert len(fake.notes) == 1
+
+
+def test_reindex_takes_paperless_assignments(letter_pdf: bytes, tmp_path: Path) -> None:
+    fake = FakePaperless(letter_pdf)
+    sender = {"name": "Stadtwerke", "sender_type": "utility", "identifiers": [CREDITOR]}
+    p = pipeline(fake, FakeAnalyzer(classified("Stadtwerke", sender=sender)), tmp_path)
+    p.run(1)
+    fake.doc["correspondent"] = 999  # reassigned by hand in paperless
+    assert p.reindex() == 1
+    assert p.index.correspondents_for_identity(
+        [
+            __import__("paperless_bedrock.identifiers").identifiers.Reference(
+                "creditor_id", "DE98ZZZ09999999999"
+            )
+        ]
+    ) == {999}

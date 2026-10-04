@@ -39,3 +39,16 @@ def test_context_file(tmp_path: Path) -> None:
     assert context.names == ["Erika"]
     assert context.tax.scopes[0].tag == "tax-DE"
     assert context.tax.unclear_tag == "tax-unclear"
+
+
+def test_example_context_file_is_valid() -> None:
+    path = Path(__file__).parent.parent / "examples" / "context.toml"
+    context = Settings(paperless_url="u", paperless_token="t", context_file=path).context()
+    assert [p.tag for p in context.all_persons] == ["Erika", "Max"]
+    assert {s.id for s in context.tax.scopes} == {"de_personal", "us_personal", "us_llc"}
+
+
+@pytest.mark.parametrize("value", ["", "off", "OFF"])
+def test_consolidation_can_be_switched_off(monkeypatch: pytest.MonkeyPatch, value: str) -> None:
+    monkeypatch.setenv("CONSOLIDATE_HOUR", value)
+    assert Settings(paperless_url="u", paperless_token="t").consolidate_hour is None

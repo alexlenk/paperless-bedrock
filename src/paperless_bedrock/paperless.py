@@ -26,6 +26,18 @@ class DocumentInfo:
     added: dt.datetime | None
     tags: list[int]
     custom_fields: list[dict[str, Any]]
+    correspondent: int | None = None
+    document_type: int | None = None
+
+
+@dataclass(frozen=True)
+class NamedObject:
+    """A correspondent, document type or tag."""
+
+    id: int
+    name: str
+    owner: int | None
+    document_count: int
 
 
 class PaperlessClient:
@@ -74,6 +86,8 @@ class PaperlessClient:
             added=dt.datetime.fromisoformat(added) if added else None,
             tags=list(data.get("tags") or []),
             custom_fields=list(data.get("custom_fields") or []),
+            correspondent=data.get("correspondent"),
+            document_type=data.get("document_type"),
         )
 
     def download(self, document_id: int, *, original: bool) -> bytes:
@@ -124,3 +138,54 @@ class PaperlessClient:
             if results:
                 found[name] = (int(results[0]["id"]), str(results[0]["data_type"]))
         return found
+
+    # --- objects and bulk operations -----------------------------------------------------
+
+    def _paginate(self, url: str, params: dict[str, Any]) -> list[dict[str, Any]]:
+        results: list[dict[str, Any]] = []
+        page = 1
+        while True:
+            data = self._request(
+                "GET", url, params={**params, "page": page, "page_size": 100}
+            ).json()
+            results += data["results"]
+            if not data.get("next"):
+                return results
+            page += 1
+
+    def list_objects(self, endpoint: str) -> list[NamedObject]:
+        """All correspondents / document_types / tags."""
+        return [
+            NamedObject(
+                id=int(o["id"]),
+                name=str(o["name"]),
+                owner=o.get("owner"),
+                document_count=int(o.get("document_count") or 0),
+            )
+            for o in self._paginate(f"/api/{endpoint}/", {"ordering": "name"})
+        ]
+
+    def create_object(self, endpoint: str, name: str) -> int:
+        # matching_algorithm 6 = automatic: paperless' own classifier learns from assignments
+        response = self._request(
+            "POST", f"/api/{endpoint}/", json={"name": name, "matching_algorithm": 6}
+        )
+        return int(response.json()["id"])
+
+    def delete_object(self, endpoint: str, object_id: int) -> None:
+        self._request("DELETE", f"/api/{endpoint}/{object_id}/")
+
+    def document_fields(self, fields: list[str]) -> list[dict[str, Any]]:
+        return self._paginate("/api/documents/", {"fields": ",".join(fields)})
+
+    def document_ids(self, params: dict[str, Any]) -> list[int]:
+        return [int(d["id"]) for d in self._paginate("/api/documents/", params)]
+
+    def bulk_edit(self, document_ids: list[int], method: str, parameters: dict[str, Any]) -> None:
+        if not document_ids:
+            return
+        self._request(
+            "POST",
+            "/api/documents/bulk_edit/",
+            json={"documents": document_ids, "method": method, "parameters": parameters},
+        )

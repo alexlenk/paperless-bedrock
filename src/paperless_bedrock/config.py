@@ -5,7 +5,7 @@ from __future__ import annotations
 import tomllib
 from pathlib import Path
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -40,12 +40,26 @@ class TaxContext(BaseModel):
     unclear_tag: str = "tax-unclear"
 
 
+class Person(BaseModel):
+    name: str
+    tag: str | None = Field(default=None, description="paperless tag for letters to this person.")
+    aliases: list[str] = []
+
+
 class Context(BaseModel):
     """Optional context so the model can recognise recipients, own accounts and tax scopes."""
 
-    names: list[str] = []
+    names: list[str] = Field(default=[], description="People without a tag (shorthand).")
+    persons: list[Person] = []
     own_ibans: list[str] = []
+    own_identifiers: list[str] = Field(
+        default=[], description="Own VAT IDs, creditor IDs etc. (e.g. of an own company)."
+    )
     tax: TaxContext = TaxContext()
+
+    @property
+    def all_persons(self) -> list[Person]:
+        return [*self.persons, *(Person(name=n) for n in self.names)]
 
 
 class Settings(BaseSettings):
@@ -81,6 +95,23 @@ class Settings(BaseSettings):
     custom_fields: CustomFieldNames = CustomFieldNames()
 
     max_attempts: int = 3
+
+    judge_model_id: str | None = Field(
+        default=None, description="Model for same-entity checks; defaults to bedrock_model_id."
+    )
+    assign_correspondent: bool = True
+    assign_document_type: bool = True
+    consolidate_hour: int | None = Field(
+        default=3, ge=0, le=23, description="Local hour for the nightly consolidation; None = off."
+    )
+    max_judge_calls_per_consolidation: int = 50
+
+    @field_validator("consolidate_hour", mode="before")
+    @classmethod
+    def _hour_off(cls, value: object) -> object:
+        if isinstance(value, str) and value.strip().lower() in ("", "off", "none", "false"):
+            return None
+        return value
 
     @property
     def link_base(self) -> str:
