@@ -14,8 +14,8 @@ services:
       AWS_SECRET_ACCESS_KEY: ${PAPERLESS_BEDROCK_AWS_SECRET}
       AWS_REGION: eu-central-1
       BEDROCK_MODEL_ID: eu.anthropic.claude-sonnet-5-5
-      RECIPIENT_CONTEXT_FILE: /config/recipients.toml
+      CONTEXT_FILE: /config/context.toml
     volumes:
       - ./paperless-bedrock/data:/data
-      - ./paperless-bedrock/recipients.toml:/config/recipients.toml:ro
+      - ./paperless-bedrock/context.toml:/config/context.toml:ro
     # No ports: paperless reaches the container on the internal compose network.

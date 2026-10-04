@@ -19,8 +19,8 @@ from paperless_bedrock.prepare import PreparedInput, prepare
 from paperless_bedrock.prompt import (
     PROMPT_VERSION,
     SYSTEM_PROMPT,
+    context_text,
     letter_text,
-    recipient_context_text,
     retry_text,
 )
 from paperless_bedrock.schema import (
@@ -72,6 +72,7 @@ def field_values(analysis: LetterAnalysis) -> dict[str, Any]:
     required = [a for a in analysis.requested_actions if a.obligation == "required"]
     reply_deadlines = sorted(a.deadline for a in required if a.deadline and a.action != "pay")
     pays = payment.direction == "recipient_pays"
+    tax = analysis.tax
     return {
         "payment_needed": any(a.action == "pay" for a in required),
         "amount": (Decimal(payment.amount), payment.currency)
@@ -82,6 +83,8 @@ def field_values(analysis: LetterAnalysis) -> dict[str, Any]:
         "payment_reference": payment.reference if pays else None,
         "reply_deadline": reply_deadlines[0] if reply_deadlines else None,
         "country": None if analysis.document.country == "unknown" else analysis.document.country,
+        "tax_year": tax.year if tax and tax.relevance != "no" else None,
+        "tax_categories": "; ".join(tax.categories) if tax and tax.relevance != "no" else None,
     }
 
 
@@ -98,6 +101,8 @@ def convert(value: Any, data_type: str) -> Any:
         return f"{amount:.2f} {currency}"[:STRING_FIELD_MAX]
     if isinstance(value, bool):
         return value if data_type == "boolean" else ("yes" if value else "no")
+    if isinstance(value, int):
+        return value if data_type in ("integer", "float") else str(value)
     if isinstance(value, dt.date):
         return value.isoformat()
     return str(value)[:STRING_FIELD_MAX]
@@ -108,7 +113,8 @@ class Pipeline:
         self.settings = settings
         self.paperless = paperless
         self.analyzer = analyzer
-        self.context = settings.recipient_context()
+        self.context = settings.context()
+        self._scope_ids = [scope.id for scope in self.context.tax.scopes]
 
     def run(self, document_id: int, *, force: bool = False) -> Outcome:
         doc = self.paperless.get_document(document_id)
@@ -158,10 +164,7 @@ class Pipeline:
         image_pages = [p.number for p in prepared.pages][: s.max_image_pages]
         images = render_pages(pdf, image_pages, s.image_dpi)
 
-        system_prompt = SYSTEM_PROMPT
-        context = recipient_context_text(self.context)
-        if context:
-            system_prompt += "\n" + context
+        system_prompt = SYSTEM_PROMPT + "\n" + context_text(self.context)
         request = ModelRequest(
             system_prompt=system_prompt,
             text=letter_text([(p.number, p.text) for p in prepared.pages]),
@@ -170,13 +173,17 @@ class Pipeline:
 
         started = time.monotonic()
         result = self.analyzer.analyze(request)
-        issues = checks.check(result.content, prepared.text, self.context.own_ibans)
+        issues = checks.check(
+            result.content, prepared.text, self.context.own_ibans, self._scope_ids
+        )
         usage = dict(result.usage)
         if issues:
             log.info("document %s: %d issues, retrying once", doc.id, len(issues))
             request.feedback = retry_text([f"{i.field}: {i.problem}" for i in issues])
             second = self.analyzer.analyze(request)
-            second_issues = checks.check(second.content, prepared.text, self.context.own_ibans)
+            second_issues = checks.check(
+                second.content, prepared.text, self.context.own_ibans, self._scope_ids
+            )
             for key, value in second.usage.items():
                 usage[key] = usage.get(key, 0) + value
             if _score(second_issues) <= _score(issues):
@@ -238,10 +245,9 @@ class Pipeline:
             update["custom_fields"] = custom_fields
         if s.remove_inbox_tags:
             update["remove_inbox_tags"] = True
-        if analysis.validation.status == "failed":
-            tags = self._tags_with_failed(doc)
-            if tags is not None:
-                update["tags"] = tags
+        tags = self._tags(doc, analysis)
+        if tags != doc.tags:
+            update["tags"] = tags
         if update:
             self.paperless.update_document(doc.id, update)
 
@@ -275,13 +281,41 @@ class Pipeline:
         merged += [{"field": fid, "value": value} for fid, value in ours.items()]
         return merged
 
+    def _tag_id(self, name: str) -> int | None:
+        tag_id = self.paperless.find_id("tags", name)
+        if tag_id is None:
+            log.warning("tag %r does not exist in paperless; create it", name)
+        return tag_id
+
     def _tags_with_failed(self, doc: DocumentInfo) -> list[int] | None:
         """The document's tags plus the failure tag, or None if nothing changes."""
-        tag_id = self.paperless.find_id("tags", self.settings.failed_tag)
-        if tag_id is None:
-            log.warning("tag %r does not exist in paperless; create it", self.settings.failed_tag)
+        tag_id = self._tag_id(self.settings.failed_tag)
+        if tag_id is None or tag_id in doc.tags:
             return None
-        return None if tag_id in doc.tags else [*doc.tags, tag_id]
+        return [*doc.tags, tag_id]
+
+    def _tags(self, doc: DocumentInfo, analysis: LetterAnalysis) -> list[int]:
+        """Document tags after the analysis: tax tags replaced, failure tag added if needed."""
+        wanted: list[str] = []
+        managed: list[str] = []
+        tax_context = self.context.tax
+        if tax_context.scopes:
+            managed = [scope.tag for scope in tax_context.scopes] + [tax_context.unclear_tag]
+            tax = analysis.tax
+            if tax and tax.relevance == "yes":
+                wanted = [s.tag for s in tax_context.scopes if s.id in tax.scopes]
+            elif tax is None or tax.relevance == "unclear":
+                wanted = [tax_context.unclear_tag]
+        if analysis.validation.status == "failed":
+            wanted.append(self.settings.failed_tag)
+        ids = {name: self._tag_id(name) for name in {*managed, *wanted}}
+        managed_ids = {ids[name] for name in managed}
+        tags = [t for t in doc.tags if t not in managed_ids]
+        for name in wanted:
+            tag_id = ids[name]
+            if tag_id is not None and tag_id not in tags:
+                tags.append(tag_id)
+        return tags
 
 
 def _score(issues: list[ValidationIssue]) -> int:

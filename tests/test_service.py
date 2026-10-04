@@ -142,3 +142,88 @@ def test_convert_amount(data_type: str, expected: object) -> None:
     from decimal import Decimal
 
     assert convert((Decimal("5"), "EUR"), data_type) == expected
+
+
+# --- tax classification ------------------------------------------------------------------
+
+TAX_CONTEXT = """
+[tax]
+facts = ["Alex runs a US LLC; its business expenses are deductible in the US."]
+[[tax.scopes]]
+id = "de_personal"
+jurisdiction = "DE"
+description = "German joint income tax return"
+tag = "tax-DE"
+[[tax.scopes]]
+id = "us_llc"
+jurisdiction = "US"
+description = "US LLC business return"
+tag = "tax-LLC"
+"""
+
+
+def tax_setup(letter_pdf: bytes, tmp_path: Path) -> tuple[FakePaperless, Path]:
+    path = tmp_path / "context.toml"
+    path.write_text(TAX_CONTEXT)
+    fake = FakePaperless(letter_pdf)
+    fake.tags.update({"tax-DE": 20, "tax-LLC": 21, "tax-unclear": 22})
+    fake.custom_fields.update({"Tax year": (15, "integer"), "Tax categories": (16, "string")})
+    return fake, path
+
+
+def with_tax(**tax: object) -> LetterContent:
+    evidence = [{"quote": "Geänderter Bescheid für 2024 über Einkommensteuer", "page": 1}]
+    return LetterContent.model_validate(
+        content_dict(tax={"reason": "Steuerbescheid", "evidence": evidence, **tax})
+    )
+
+
+def test_tax_relevant_sets_scope_tags_and_fields(letter_pdf: bytes, tmp_path: Path) -> None:
+    fake, path = tax_setup(letter_pdf, tmp_path)
+    fake.doc["tags"] = [5, 22]  # stale tax-unclear from an earlier run
+    content = with_tax(relevance="yes", scopes=["de_personal"], year=2024, categories=["ESt"])
+    analyzer = FakeAnalyzer(content)
+    outcome = pipeline(fake, analyzer, tmp_path, context_file=path).run(1)
+
+    assert outcome.analysis is not None and outcome.analysis.validation.status == "passed"
+    assert "de_personal (DE): German joint income tax return" in analyzer.requests[0].system_prompt
+    assert "Alex runs a US LLC" in analyzer.requests[0].system_prompt
+    patch = fake.patches[0]
+    assert patch["tags"] == [5, 20]
+    values = {f["field"]: f["value"] for f in patch["custom_fields"]}
+    assert values[15] == 2024 and values[16] == "ESt"
+    assert json.loads(fake.notes[0])["tax"]["year"] == 2024
+
+
+def test_not_tax_relevant_removes_tax_tags(letter_pdf: bytes, tmp_path: Path) -> None:
+    fake, path = tax_setup(letter_pdf, tmp_path)
+    fake.doc["tags"] = [5, 20, 21]
+    pipeline(fake, FakeAnalyzer(with_tax(relevance="no")), tmp_path, context_file=path).run(1)
+    patch = fake.patches[0]
+    assert patch["tags"] == [5]
+    values = {f["field"]: f["value"] for f in patch["custom_fields"]}
+    assert values[15] is None and values[16] is None
+
+
+def test_unclear_or_missing_tax_gets_unclear_tag(letter_pdf: bytes, tmp_path: Path) -> None:
+    fake, path = tax_setup(letter_pdf, tmp_path)
+    unclear = with_tax(relevance="unclear")
+    pipeline(fake, FakeAnalyzer(unclear), tmp_path, context_file=path).run(1)
+    assert fake.patches[0]["tags"] == [5, 22]
+
+    fake, path = tax_setup(letter_pdf, tmp_path)
+    missing = good()  # model ignored the tax field twice
+    outcome = pipeline(fake, FakeAnalyzer(missing, missing), tmp_path, context_file=path).run(1)
+    assert fake.patches[0]["tags"] == [5, 22]
+    assert outcome.analysis is not None
+    assert any(i.field == "tax" for i in outcome.analysis.validation.issues)
+
+
+def test_without_tax_scopes_tags_are_untouched(letter_pdf: bytes, tmp_path: Path) -> None:
+    fake = FakePaperless(letter_pdf)
+    fake.tags.update({"tax-DE": 20})
+    fake.doc["tags"] = [5, 20]
+    analyzer = FakeAnalyzer(good())
+    pipeline(fake, analyzer, tmp_path).run(1)
+    assert "tags" not in fake.patches[0]
+    assert "set `tax` to null" in analyzer.requests[0].system_prompt

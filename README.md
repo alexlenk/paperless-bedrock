@@ -16,7 +16,9 @@ the result with deterministic rules, and stores it:
 - in the **PDF itself** as a new document version with XMP metadata (standard Dublin Core fields
   plus the full analysis), so the analysis survives a change of document management system,
 - as a **paperless note** (full JSON), **custom fields** (amount, due date, IBAN, ...) and a
-  readable **title**.
+  readable **title**,
+- optionally with a **tax classification**: which of your tax returns (e.g. German, US, a US LLC)
+  the document matters for, the tax year and the category — as tags and custom fields.
 
 The analysis answers *what the letter says, who sent it, who it is for and what it asks for* —
 with a verbatim quote for every key statement. It deliberately does **not** decide what to do;
@@ -56,6 +58,8 @@ Claude on Amazon Bedrock.
    | Payment reference | Text |
    | Reply deadline | Date |
    | Country | Text |
+   | Tax year | Integer |
+   | Tax categories | Text |
 4. **Container:** add the service from [`examples/docker-compose.yml`](examples/docker-compose.yml)
    to the compose project that runs paperless (same network, no published ports).
 5. **paperless workflow:** trigger *Document Added*, action *Webhook*:
@@ -85,7 +89,7 @@ All settings are environment variables.
 | `MAX_PAGES` / `MAX_IMAGE_PAGES` | `20` / `20` | Pages sent as text / as images; more pages set `input.truncated` |
 | `IMAGE_DPI` | `130` | Resolution of the page images |
 | `NOISE_PROFILES` | `["deutsche_post_postscan"]` | JSON list of noise profiles (see `prepare.py`) |
-| `RECIPIENT_CONTEXT_FILE` | none | TOML with `names` and `own_ibans` ([example](examples/recipients.toml)) |
+| `CONTEXT_FILE` | none | TOML with names, own IBANs and tax scopes ([example](examples/context.toml)) |
 | `FAILED_TAG` | `analysis-failed` | Tag for failed analyses |
 | `REMOVE_INBOX_TAGS` | `false` | Remove inbox tags after analysis |
 | `SET_TITLE` | `true` | Set the title to "Sender – Subject" |
@@ -94,6 +98,23 @@ All settings are environment variables.
 | `CUSTOM_FIELDS__<KEY>` | see table above | Rename a custom field, e.g. `CUSTOM_FIELDS__AMOUNT=Betrag` |
 | `MAX_ATTEMPTS` | `3` | Attempts per document before it is tagged as failed |
 | `DATA_DIR` | `/data` | Job queue (SQLite) |
+
+## Tax classification
+
+Configure tax scopes in the context file ([example](examples/context.toml)): one scope per tax
+return or entity, each with a paperless tag, plus short household facts for special cases (home
+office, rental property, an LLC, children, foreign accounts). For every document the model then
+decides `yes` / `no` / `unclear`, the scopes, the tax year (the year the income or expense belongs
+to, not the letter date) and categories such as `Anlage V` or `Schedule C expense`. When in doubt it
+says `yes`; `unclear` is reserved for cases that depend on a fact that is missing.
+
+In paperless this becomes one tag per relevant scope (e.g. `tax-DE`, `tax-LLC`), `tax-unclear` for
+unclear cases, and the custom fields `Tax year` and `Tax categories`. Create the tags first.
+Re-analysing a document replaces its tax tags. The tax classification is kept out of the PDF's XMP
+metadata because it depends on your household context, not on the letter alone.
+
+To hand documents to a tax adviser: filter by tag `tax-DE` and `Tax year` = 2025, select all,
+download.
 
 ## Where to read the analysis
 
